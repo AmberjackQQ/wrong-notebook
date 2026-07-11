@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(openssl rand *)",
+      "Bash(docker *)",
+      "Bash(dos2unix docker-entrypoint.sh)",
+      "Bash(curl -I --connect-timeout 5 https://fonts.googleapis.com)",
+      "Bash(curl -I http://localhost:3000)",
+      "Bash(C/ config *)",
+      "Bash(C/)",
+      "Bash(docker-compose up *)",
+      "Bash(npm install *)",
+      "Bash(npx prisma *)",
+      "Bash(npx tsc *)",
+      "Bash(node ./dist-scripts/scripts/rebuild-system-tags.js)",
+      "Bash(npm run *)",
+      "Bash(curl -s http://localhost:3000)",
+      "Bash(curl -s \"http://localhost:3000/login\")",
+      "Bash(curl -s http://localhost:3000/login)",
+      "Bash(cat)",
+      "Read(//tmp/**)",
+      "Bash(taskkill *)",
+      "Bash(npx shadcn@latest add popover)",
+      "Bash(netstat -ano)",
+      "Bash(findstr :3000)",
+      "Bash(mkdir -p data)",
+      "Bash(cp prisma/dev.db data/dev.db)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
+    ]
+  }
+}

@@ -29,6 +29,7 @@ model User {
   subjects   Subject[]
   practiceRecords PracticeRecord[]
   customTags KnowledgeTag[] // User's custom tags
+  questionSources QuestionSource[] // User's custom question sources
 }
 
 // 统一知识点标签表 (支持无限层级)
@@ -108,12 +109,26 @@ model ErrorItem {
   
   masteryLevel     Int     @default(0) // 0: New, 1: Reviewing, 2: Mastered
   gradeSemester    String? // e.g. "Junior High Grade 2, 1st Semester"
-  paperLevel       String? // e.g. "A", "B", "Other"
+  paperLevel       String? // e.g. "a", "b", "other" - 题目来源：模拟考试、期中考试、期末考试等
   
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
   reviewSchedules ReviewSchedule[]
+}
+
+// 用户自定义题目来源
+model QuestionSource {
+  id        String   @id @default(cuid())
+  name      String   // 来源名称，如 "月考", "单元测试"
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sortOrder Int      @default(0) // 排序
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([name, userId])
+  @@index([userId])
 }
 
 model ReviewSchedule {

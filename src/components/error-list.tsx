@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Search, Filter, CheckCircle, Clock, ChevronDown, Printer, ListChecks, Trash2, X } from "lucide-react";
+import { Search, Filter, CheckCircle, Clock, ChevronDown, Printer, ListChecks, Trash2, X, ArrowUpDown } from "lucide-react";
 import Link from "next/link";
 import { format } from "date-fns";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -26,6 +26,8 @@ import { cleanMarkdown } from "@/lib/markdown-utils";
 import { Pagination } from "@/components/ui/pagination";
 import { DEFAULT_PAGE_SIZE } from "@/lib/constants/pagination";
 import { getMistakeStatusLabel } from "@/lib/mistake-status";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ChevronDown as ChevronDownIcon } from "lucide-react";
 
 interface ErrorListProps {
     subjectId?: string;
@@ -46,7 +48,7 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
     const [timeFilter, setTimeFilter] = useState<"all" | "week" | "month">("all");
     const [gradeFilter, setGradeFilter] = useState("");
     const [chapterFilter, setChapterFilter] = useState("");
-    const [paperLevelFilter, setPaperLevelFilter] = useState<"all" | "a" | "b" | "other">("all");
+    const [paperLevelFilter, setPaperLevelFilter] = useState<string>("all");
     const [selectedTag, setSelectedTag] = useState<string | null>(null);
     const [expandedTags, setExpandedTags] = useState<Set<string>>(new Set());
     // 分页状态
@@ -58,6 +60,12 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
     const [isSelectMode, setIsSelectMode] = useState(false);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [isDeleting, setIsDeleting] = useState(false);
+    // 自定义题目来源
+    const [customQuestionSources, setCustomQuestionSources] = useState<string[]>([]);
+    const [sourcePopoverOpen, setSourcePopoverOpen] = useState(false);
+    // 排序状态
+    const [sortBy, setSortBy] = useState<string>("createdAt");
+    const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
     const { t, language } = useLanguage();
     const router = useRouter();
 
@@ -167,8 +175,37 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
         }
     };
 
+    const toggleSelectAll = () => {
+        if (selectedIds.size === items.length) {
+            // 如果已全选，则取消全选
+            setSelectedIds(new Set());
+        } else {
+            // 否则全选当前页的所有项目
+            setSelectedIds(new Set(items.map(item => item.id)));
+        }
+    };
+
+    const toggleSortOrder = () => {
+        setSortOrder(sortOrder === "desc" ? "asc" : "desc");
+    };
+
     // 追踪筛选条件是否变化（用于判断是否需要重置页码）
-    const prevFiltersRef = useRef({ search, masteryFilter, timeFilter, selectedTag, subjectId, gradeFilter, chapterFilter, paperLevelFilter });
+    const prevFiltersRef = useRef({ search, masteryFilter, timeFilter, selectedTag, subjectId, gradeFilter, chapterFilter, paperLevelFilter, sortBy, sortOrder });
+
+    // 获取自定义题目来源
+    useEffect(() => {
+        const fetchCustomSources = async () => {
+            try {
+                const sources = await apiClient.get<{ id: string; name: string }[]>("/api/question-sources");
+                setCustomQuestionSources(sources.map(s => s.name));
+            } catch (error) {
+                console.error("Failed to fetch custom question sources:", error);
+                setCustomQuestionSources([]);
+            }
+        };
+
+        fetchCustomSources();
+    }, []);
 
     useEffect(() => {
         const prevFilters = prevFiltersRef.current;
@@ -180,10 +217,12 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
             prevFilters.subjectId !== subjectId ||
             prevFilters.gradeFilter !== gradeFilter ||
             prevFilters.chapterFilter !== chapterFilter ||
-            prevFilters.paperLevelFilter !== paperLevelFilter;
+            prevFilters.paperLevelFilter !== paperLevelFilter ||
+            prevFilters.sortBy !== sortBy ||
+            prevFilters.sortOrder !== sortOrder;
 
         // 更新 ref
-        prevFiltersRef.current = { search, masteryFilter, timeFilter, selectedTag, subjectId, gradeFilter, chapterFilter, paperLevelFilter };
+        prevFiltersRef.current = { search, masteryFilter, timeFilter, selectedTag, subjectId, gradeFilter, chapterFilter, paperLevelFilter, sortBy, sortOrder };
 
         if (filtersChanged && page !== 1) {
             // 筛选条件变化且不在第一页，重置到第一页（会再次触发此 effect）
@@ -193,7 +232,7 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
 
         // 正常请求数据
         fetchItems();
-    }, [page, search, masteryFilter, timeFilter, selectedTag, subjectId, gradeFilter, chapterFilter, paperLevelFilter]);
+    }, [page, search, masteryFilter, timeFilter, selectedTag, subjectId, gradeFilter, chapterFilter, paperLevelFilter, sortBy, sortOrder]);
 
     const fetchItems = async () => {
         setLoading(true);
@@ -213,6 +252,9 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
             if (gradeFilter) params.append("gradeSemester", gradeFilter);
             if (chapterFilter) params.append("chapter", chapterFilter); // 章节筛选
             if (paperLevelFilter !== "all") params.append("paperLevel", paperLevelFilter);
+            // 排序参数
+            params.append("sortBy", sortBy);
+            params.append("sortOrder", sortOrder);
             // 分页参数
             params.append("page", page.toString());
             params.append("pageSize", pageSize.toString());
@@ -279,6 +321,14 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
                     {t.notebook?.exportPrint || "导出打印"}
                 </Button>
                 <Button
+                    variant="outline"
+                    onClick={toggleSortOrder}
+                    title={sortOrder === "desc" ? "切换为升序" : "切换为降序"}
+                >
+                    <ArrowUpDown className="mr-2 h-4 w-4" />
+                    {sortOrder === "desc" ? "最新→最早" : "最早→最新"}
+                </Button>
+                <Button
                     variant={isSelectMode ? "secondary" : "outline"}
                     onClick={toggleSelectMode}
                 >
@@ -298,34 +348,71 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
                     />
                 </div>
                 <div className="flex flex-wrap gap-2">
-                    <Button
-                        variant={paperLevelFilter === "all" ? "secondary" : "outline"}
-                        size="sm"
-                        onClick={() => setPaperLevelFilter("all")}
-                    >
-                        {t.filter.all || "All"}
-                    </Button>
-                    <Button
-                        variant={paperLevelFilter === "a" ? "secondary" : "outline"}
-                        size="sm"
-                        onClick={() => setPaperLevelFilter("a")}
-                    >
-                        {t.editor.paperLevels?.a || "Paper A"}
-                    </Button>
-                    <Button
-                        variant={paperLevelFilter === "b" ? "secondary" : "outline"}
-                        size="sm"
-                        onClick={() => setPaperLevelFilter("b")}
-                    >
-                        {t.editor.paperLevels?.b || "Paper B"}
-                    </Button>
-                    <Button
-                        variant={paperLevelFilter === "other" ? "secondary" : "outline"}
-                        size="sm"
-                        onClick={() => setPaperLevelFilter("other")}
-                    >
-                        {t.editor.paperLevels?.other || "Other"}
-                    </Button>
+                    <Popover open={sourcePopoverOpen} onOpenChange={setSourcePopoverOpen}>
+                        <PopoverTrigger asChild>
+                            <Button
+                                variant={paperLevelFilter === "all" ? "secondary" : "outline"}
+                                size="sm"
+                                className="min-w-[100px]"
+                            >
+                                {paperLevelFilter === "all" ? (t.filter.all || "全部") : paperLevelFilter}
+                                <ChevronDownIcon className="ml-2 h-4 w-4" />
+                            </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[200px] p-0">
+                            <div className="max-h-[300px] overflow-y-auto p-1">
+                                <div className="px-2 py-1.5 text-sm font-semibold text-muted-foreground">
+                                    预设选项
+                                </div>
+                                <Button
+                                    variant="ghost"
+                                    className={`w-full justify-start px-2 ${paperLevelFilter === "all" ? "bg-secondary" : ""}`}
+                                    size="sm"
+                                    onClick={() => {
+                                        setPaperLevelFilter("all");
+                                        setSourcePopoverOpen(false);
+                                    }}
+                                >
+                                    {t.filter.all || "全部"}
+                                </Button>
+                                {["模拟考试", "期中考试", "期末考试"].map(source => (
+                                    <Button
+                                        key={source}
+                                        variant="ghost"
+                                        className={`w-full justify-start px-2 ${paperLevelFilter === source ? "bg-secondary" : ""}`}
+                                        size="sm"
+                                        onClick={() => {
+                                            setPaperLevelFilter(source);
+                                            setSourcePopoverOpen(false);
+                                        }}
+                                    >
+                                        {source}
+                                    </Button>
+                                ))}
+                                {customQuestionSources.length > 0 && (
+                                    <>
+                                        <div className="px-2 py-1.5 text-sm font-semibold text-muted-foreground mt-2">
+                                            自定义来源
+                                        </div>
+                                        {customQuestionSources.map(source => (
+                                            <Button
+                                                key={source}
+                                                variant="ghost"
+                                                className={`w-full justify-start px-2 ${paperLevelFilter === source ? "bg-secondary" : ""}`}
+                                                size="sm"
+                                                onClick={() => {
+                                                    setPaperLevelFilter(source);
+                                                    setSourcePopoverOpen(false);
+                                                }}
+                                            >
+                                                {source}
+                                            </Button>
+                                        ))}
+                                    </>
+                                )}
+                            </div>
+                        </PopoverContent>
+                    </Popover>
                 </div>
             </div>
 
@@ -338,6 +425,20 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
                         {selectedTag}
                         <span className="ml-1 text-xs">×</span>
                     </Badge>
+                </div>
+            )}
+
+            {/* 多选模式下的全选提示 */}
+            {isSelectMode && (
+                <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
+                    <Checkbox
+                        checked={selectedIds.size === items.length && items.length > 0}
+                        onCheckedChange={toggleSelectAll}
+                        className="h-5 w-5 border-2 bg-background shadow-sm"
+                    />
+                    <span className="text-sm text-muted-foreground">
+                        {selectedIds.size === items.length ? "已全选当前页" : "点击全选当前页所有项目"}
+                    </span>
                 </div>
             )}
 
@@ -387,7 +488,7 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
                                                 )}
                                             </Badge>
                                             <span className="text-xs text-muted-foreground">
-                                                {format(new Date(item.createdAt), "MM/dd")}
+                                                {format(new Date(item.createdAt), "MM/dd HH:mm")}
                                             </span>
                                         </div>
                                     </CardHeader>
@@ -460,9 +561,28 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
             {isSelectMode && (
                 <div className="fixed bottom-0 left-0 right-0 bg-background border-t shadow-lg p-4 z-50">
                     <div className="max-w-6xl mx-auto flex items-center justify-between gap-4">
-                        <span className="text-sm text-muted-foreground">
-                            {(t.notebook?.selectedCount || "{count} selected").replace("{count}", selectedIds.size.toString())}
-                        </span>
+                        <div className="flex items-center gap-4">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={toggleSelectAll}
+                            >
+                                {selectedIds.size === items.length ? (
+                                    <>
+                                        <span className="mr-2">☐</span>
+                                        取消全选
+                                    </>
+                                ) : (
+                                    <>
+                                        <span className="mr-2">☑</span>
+                                        全选
+                                    </>
+                                )}
+                            </Button>
+                            <span className="text-sm text-muted-foreground">
+                                {(t.notebook?.selectedCount || "{count} selected").replace("{count}", selectedIds.size.toString())}
+                            </span>
+                        </div>
                         <div className="flex gap-2">
                             <Button
                                 variant="outline"

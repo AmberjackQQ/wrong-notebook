@@ -44,6 +44,8 @@ export const translations = {
                 markMastered: "Marked as mastered",
                 unmarkMastered: "Unmarked",
                 confirmDelete: "Are you sure you want to delete this error item?",
+                useAIAnalysis: "Use AI to analyze the question?\n\nClick 「OK」 to use AI analysis\nClick 「Cancel」 to manually edit and save",
+                imageProcessFailed: "Image processing failed, please try again",
             }
         },
         app: {
@@ -131,11 +133,11 @@ export const translations = {
             messages: {
                 selectNotebook: "Please select a notebook",
             },
-            paperLevel: "Paper Level",
+            paperLevel: "Question Source",
             paperLevels: {
-                a: "Paper A",
-                b: "Paper B",
-                other: "Other",
+                a: "Mock Exam",
+                b: "Midterm Exam",
+                other: "Final Exam",
             },
             reanswerSuccess: "✅ Answer and analysis updated!",
             enterQuestionFirst: "Please enter question text first",
@@ -692,6 +694,8 @@ export const translations = {
                 markMastered: "已标记为已掌握",
                 unmarkMastered: "已取消掌握标记",
                 confirmDelete: "确定要删除这道错题吗？",
+                useAIAnalysis: "是否使用AI分析题目？\n\n点击「确定」使用AI分析\n点击「取消」手动编辑保存",
+                imageProcessFailed: "图片处理失败，请重试",
             }
         },
         app: {
@@ -779,11 +783,11 @@ export const translations = {
             messages: {
                 selectNotebook: "请选择一个错题本",
             },
-            paperLevel: "所属卷等级",
+            paperLevel: "题目来源",
             paperLevels: {
-                a: "A卷",
-                b: "B卷",
-                other: "其他",
+                a: "模拟考试",
+                b: "期中考试",
+                other: "期末考试",
             },
             reanswerSuccess: "✅ 答案和解析已更新！",
             enterQuestionFirst: "请先输入题目内容",
@@ -985,7 +989,7 @@ export const translations = {
             lastMonth: "最近一个月",
             filteringByTag: "按标签筛选",
             grade: "年级/学期",
-            paperLevel: "所属卷等级",
+            paperLevel: "题目来源",
         },
         stats: {
             title: "练习统计",
@@ -1261,7 +1265,7 @@ export const translations = {
             showTags: "显示知识点",
             printButton: "打印 / 保存 PDF",
             questionNumber: "题目 {num}",
-            paperLevel: "试卷等级",
+            paperLevel: "题目来源",
             knowledgePoints: "知识点",
             selectItems: "选择题目",
             selectAll: "全选",

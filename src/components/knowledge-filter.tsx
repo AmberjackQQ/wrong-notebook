@@ -107,12 +107,26 @@ export function KnowledgeFilter({
         return 0;
     }, []);
 
+    // 根据学科确定默认年级范围
+    const getGradesBySubject = useCallback((subject: string): number[] => {
+        // 化学、物理、生物通常是高中学科
+        if (['chemistry', 'physics', 'biology'].includes(subject)) {
+            return [10, 11, 12]; // 高中
+        }
+        // 数学、英语等学科覆盖小学到高中
+        return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+    }, []);
+
     // 根据用户信息生成可用年级列表
-    const generateAvailableGrades = useCallback((educationStage?: string, enrollmentYear?: number): string[] => {
+    const generateAvailableGrades = useCallback((educationStage?: string, enrollmentYear?: number, subjectName?: string): string[] => {
         let grades: number[] = [];
 
-        // 默认: 显示所有年级
-        if (!educationStage) {
+        // 首先根据学科确定基础年级范围
+        const subject = subjectName ? inferSubjectFromName(subjectName) : null;
+        if (subject) {
+            grades = getGradesBySubject(subject);
+        } else if (!educationStage) {
+            // 没有学科信息且没有教育阶段: 显示所有年级
             grades = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
         } else if (educationStage === 'primary') {
             // 小学生: 显示小学全部
@@ -136,11 +150,8 @@ export function KnowledgeFilter({
             grades = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
         }
 
-        // 可以在这里根据 enrollmentYear 做进一步优化，比如高亮当前年级
-        // 但目前先返回该阶段的所有年级
-
         return grades.flatMap(g => GRADE_TO_SEMESTERS[g] || []);
-    }, [calculateCurrentGrade]);
+    }, [calculateCurrentGrade, getGradesBySubject]);
 
     // 加载用户信息和标签树
     useEffect(() => {
@@ -152,7 +163,7 @@ export function KnowledgeFilter({
                 setUserInfo(user);
 
                 // 2. 生成可用年级
-                const grades = generateAvailableGrades(user.educationStage, user.enrollmentYear);
+                const grades = generateAvailableGrades(user.educationStage, user.enrollmentYear, subjectName);
                 setAvailableGrades(grades);
 
                 // 3. 获取标签树 (所有科目)

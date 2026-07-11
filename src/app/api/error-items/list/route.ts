@@ -18,6 +18,8 @@ export async function GET(req: Request) {
     const mastery = searchParams.get("mastery");
     const timeRange = searchParams.get("timeRange");
     const tag = searchParams.get("tag");
+    const sortBy = searchParams.get("sortBy") || "createdAt";
+    const sortOrder = searchParams.get("sortOrder") || "desc";
 
     // 分页参数
     const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
@@ -146,7 +148,9 @@ export async function GET(req: Request) {
         // 分页查询
         const errorItems = await prisma.errorItem.findMany({
             where: whereClause,
-            orderBy: { createdAt: "desc" },
+            orderBy: {
+                [sortBy]: sortOrder as "asc" | "desc",
+            },
             include: {
                 subject: true,
                 tags: true,

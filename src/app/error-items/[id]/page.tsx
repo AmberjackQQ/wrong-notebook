@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, CheckCircle, XCircle, RefreshCw, Trash2, Edit, Save, X, Box, Loader2 } from "lucide-react";
+import { ArrowLeft, CheckCircle, XCircle, RefreshCw, Trash2, Edit, Save, X, Box, Loader2, Plus, ChevronDown } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import Link from "next/link";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -19,6 +19,7 @@ import { inferSubjectFromName } from "@/lib/knowledge-tags";
 import { getMistakeStatusLabel, normalizeMistakeStatusForSave } from "@/lib/mistake-status";
 import { NotebookSelector } from "@/components/notebook-selector";
 import { GeogebraDemo } from "@/components/geogebra-demo";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 interface KnowledgeTag {
     id: string;
@@ -46,6 +47,8 @@ interface ErrorItemDetail {
     gradeSemester?: string | null;
     paperLevel?: string | null;
     geogebraCommands?: string | null;
+    createdAt: string; // 添加导入时间字段
+    updatedAt?: string;
 }
 
 export default function ErrorDetailPage() {
@@ -61,13 +64,19 @@ export default function ErrorDetailPage() {
     const [tagsInput, setTagsInput] = useState<string[]>([]);
     const [isEditingMetadata, setIsEditingMetadata] = useState(false);
     const [gradeSemesterInput, setGradeSemesterInput] = useState("");
-    const [paperLevelInput, setPaperLevelInput] = useState("a");
+    const [paperLevelInput, setPaperLevelInput] = useState("模拟考试");
     const [notebookInput, setNotebookInput] = useState<string | null>(null);
+    const [importTimeInput, setImportTimeInput] = useState("");
 
     const [educationStage, setEducationStage] = useState<string | undefined>(undefined);
 
     const [isAnalyzingGeogebra, setIsAnalyzingGeogebra] = useState(false);
     const [geogebraError, setGeogebraError] = useState<string | null>(null);
+
+    const [customQuestionSources, setCustomQuestionSources] = useState<string[]>([]);
+    const [newSourceName, setNewSourceName] = useState("");
+    const [isAddingSource, setIsAddingSource] = useState(false);
+    const [sourcePopoverOpen, setSourcePopoverOpen] = useState(false);
 
     useEffect(() => {
         // Fetch user info for education stage
@@ -78,6 +87,17 @@ export default function ErrorDetailPage() {
                 }
             })
             .catch(err => console.error("Failed to fetch user info:", err));
+
+        // Fetch custom question sources
+        apiClient.get<{ id: string; name: string }[]>("/api/question-sources")
+            .then(sources => {
+                const sourceNames = sources.map(s => s.name);
+                setCustomQuestionSources(sourceNames);
+            })
+            .catch(err => {
+                console.error("Failed to fetch custom question sources:", err);
+                setCustomQuestionSources([]);
+            });
 
         if (params.id) {
             fetchItem(params.id as string);
@@ -125,6 +145,59 @@ export default function ErrorDetailPage() {
             }
         } finally {
             setIsAnalyzingGeogebra(false);
+        }
+    };
+
+    const handleAddCustomSource = async () => {
+        const trimmedName = newSourceName.trim();
+        if (!trimmedName) {
+            alert('请输入来源名称');
+            return;
+        }
+
+        if (customQuestionSources.includes(trimmedName)) {
+            alert('该来源已存在');
+            return;
+        }
+
+        setIsAddingSource(true);
+        try {
+            const response = await apiClient.post<{ id: string; name: string }>("/api/question-sources", { name: trimmedName });
+            setCustomQuestionSources(prev => [...prev, response.name]);
+            setPaperLevelInput(response.name);
+            setNewSourceName("");
+            setSourcePopoverOpen(false);
+        } catch (error: any) {
+            console.error("Failed to add custom source:", error);
+            alert(error.message || '添加失败，请稍后重试');
+        } finally {
+            setIsAddingSource(false);
+        }
+    };
+
+    const handleDeleteCustomSource = async (sourceName: string) => {
+        if (!confirm(`确定要删除来源「${sourceName}」吗？`)) {
+            return;
+        }
+
+        try {
+            // Find the source ID by name
+            const sources = await apiClient.get<{ id: string; name: string }[]>("/api/question-sources");
+            const sourceToDelete = sources.find(s => s.name === sourceName);
+
+            if (!sourceToDelete) {
+                alert('找不到要删除的来源');
+                return;
+            }
+
+            await apiClient.delete(`/api/question-sources/${sourceToDelete.id}`);
+            setCustomQuestionSources(prev => prev.filter(s => s !== sourceName));
+            if (paperLevelInput === sourceName) {
+                setPaperLevelInput("模拟考试");
+            }
+        } catch (error: any) {
+            console.error("Failed to delete custom source:", error);
+            alert(error.message || '删除失败，请稍后重试');
         }
     };
 
@@ -218,17 +291,26 @@ export default function ErrorDetailPage() {
         if (item) {
             setNotebookInput(item.subjectId || null);
             setGradeSemesterInput(item.gradeSemester || "");
-            setPaperLevelInput(item.paperLevel || "a");
+            setPaperLevelInput(item.paperLevel || "模拟考试");
+            // 格式化导入时间为 datetime-local 格式
+            const importTime = new Date(item.createdAt);
+            const formattedTime = importTime.toISOString().slice(0, 16); // YYYY-MM-DDTHH:mm
+            setImportTimeInput(formattedTime);
             setIsEditingMetadata(true);
         }
     };
 
     const saveMetadataHandler = async () => {
         try {
+            // 转换导入时间为ISO格式
+            const parsedTime = new Date(importTimeInput);
+            const formattedTime = parsedTime.toISOString();
+
             await apiClient.put(`/api/error-items/${item?.id}`, {
                 subjectId: notebookInput || null,
                 gradeSemester: gradeSemesterInput,
                 paperLevel: paperLevelInput,
+                createdAt: formattedTime, // 添加导入时间更新
             });
 
             setIsEditingMetadata(false);
@@ -245,6 +327,7 @@ export default function ErrorDetailPage() {
         setNotebookInput(null);
         setGradeSemesterInput("");
         setPaperLevelInput("a");
+        setImportTimeInput("");
     };
 
     const [isEditingQuestion, setIsEditingQuestion] = useState(false);
@@ -617,19 +700,112 @@ export default function ErrorDetailPage() {
                                                 <label className="text-sm text-muted-foreground">
                                                     {t.filter.paperLevel}
                                                 </label>
-                                                <Select
-                                                    value={paperLevelInput}
-                                                    onValueChange={setPaperLevelInput}
-                                                >
-                                                    <SelectTrigger>
-                                                        <SelectValue />
-                                                    </SelectTrigger>
-                                                    <SelectContent>
-                                                        <SelectItem value="a">{t.editor.paperLevels?.a || 'Paper A'}</SelectItem>
-                                                        <SelectItem value="b">{t.editor.paperLevels?.b || 'Paper B'}</SelectItem>
-                                                        <SelectItem value="other">{t.editor.paperLevels?.other || 'Other'}</SelectItem>
-                                                    </SelectContent>
-                                                </Select>
+                                                <Popover open={sourcePopoverOpen} onOpenChange={setSourcePopoverOpen}>
+                                                    <PopoverTrigger asChild>
+                                                        <Button
+                                                            variant="outline"
+                                                            role="combobox"
+                                                            className="w-full justify-between"
+                                                        >
+                                                            {paperLevelInput || "模拟考试"}
+                                                            <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                                        </Button>
+                                                    </PopoverTrigger>
+                                                    <PopoverContent className="w-[--radix-popover-trigger-width] max-h-[--radix-popover-content-available-height] p-0">
+                                                        <div className="max-h-[300px] overflow-y-auto">
+                                                            <div className="p-1">
+                                                                <div className="px-2 py-1.5 text-sm font-semibold text-muted-foreground">
+                                                                    预设选项
+                                                                </div>
+                                                                {["模拟考试", "期中考试", "期末考试"].map(source => (
+                                                                    <Button
+                                                                        key={source}
+                                                                        variant="ghost"
+                                                                        className="w-full justify-start px-2"
+                                                                        onClick={() => {
+                                                                            setPaperLevelInput(source);
+                                                                            setSourcePopoverOpen(false);
+                                                                        }}
+                                                                    >
+                                                                        {source}
+                                                                    </Button>
+                                                                ))}
+                                                            </div>
+                                                            {customQuestionSources.length > 0 && (
+                                                                <div className="border-t p-1">
+                                                                    <div className="px-2 py-1.5 text-sm font-semibold text-muted-foreground">
+                                                                        自定义来源
+                                                                    </div>
+                                                                    {customQuestionSources.map(source => (
+                                                                        <div
+                                                                            key={source}
+                                                                            className="flex items-center gap-1 px-2"
+                                                                        >
+                                                                            <Button
+                                                                                variant="ghost"
+                                                                                className="flex-1 justify-start px-2"
+                                                                                onClick={() => {
+                                                                                    setPaperLevelInput(source);
+                                                                                    setSourcePopoverOpen(false);
+                                                                                }}
+                                                                            >
+                                                                                {source}
+                                                                            </Button>
+                                                                            <Button
+                                                                                variant="ghost"
+                                                                                size="sm"
+                                                                                className="h-7 w-7 p-0"
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    handleDeleteCustomSource(source);
+                                                                                }}
+                                                                            >
+                                                                                <X className="h-3 w-3" />
+                                                                            </Button>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                            <div className="border-t p-2">
+                                                                <div className="flex gap-2">
+                                                                    <Input
+                                                                        placeholder="新来源名称"
+                                                                        value={newSourceName}
+                                                                        onChange={(e) => setNewSourceName(e.target.value)}
+                                                                        onKeyDown={(e) => {
+                                                                            if (e.key === 'Enter') {
+                                                                                handleAddCustomSource();
+                                                                            }
+                                                                        }}
+                                                                        className="flex-1"
+                                                                    />
+                                                                    <Button
+                                                                        size="sm"
+                                                                        onClick={handleAddCustomSource}
+                                                                        disabled={isAddingSource || !newSourceName.trim()}
+                                                                    >
+                                                                        {isAddingSource ? (
+                                                                            <Loader2 className="h-4 w-4 animate-spin" />
+                                                                        ) : (
+                                                                            <Plus className="h-4 w-4" />
+                                                                        )}
+                                                                    </Button>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </PopoverContent>
+                                                </Popover>
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-sm text-muted-foreground">
+                                                    导入时间
+                                                </label>
+                                                <Input
+                                                    type="datetime-local"
+                                                    value={importTimeInput}
+                                                    onChange={(e) => setImportTimeInput(e.target.value)}
+                                                    max={new Date().toISOString().slice(0, 16)}
+                                                />
                                             </div>
                                             <div className="flex gap-2">
                                                 <Button size="sm" onClick={saveMetadataHandler}>
@@ -659,7 +835,19 @@ export default function ErrorDetailPage() {
                                             <div className="flex justify-between">
                                                 <span className="text-muted-foreground">{t.filter.paperLevel}:</span>
                                                 <span className="font-medium">
-                                                    {item.paperLevel ? (t.editor.paperLevels?.[item.paperLevel as 'a' | 'b' | 'other'] || item.paperLevel) : (t.common?.notSet || 'Not set')}
+                                                    {item.paperLevel || (t.common?.notSet || '未设置')}
+                                                </span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-muted-foreground">导入时间:</span>
+                                                <span className="font-medium">
+                                                    {new Date(item.createdAt).toLocaleString('zh-CN', {
+                                                        year: 'numeric',
+                                                        month: '2-digit',
+                                                        day: '2-digit',
+                                                        hour: '2-digit',
+                                                        minute: '2-digit'
+                                                    })}
                                                 </span>
                                             </div>
                                         </div>

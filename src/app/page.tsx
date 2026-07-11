@@ -112,7 +112,49 @@ function HomeContent() {
         setIsCropperOpen(false);
         // Convert Blob to File
         const file = new File([croppedBlob], "cropped-image.jpg", { type: "image/jpeg" });
-        handleAnalyze(file);
+
+        // 询问用户是否使用AI分析
+        const useAI = confirm(t.common?.messages?.useAIAnalysis || "是否使用AI分析题目？\n\n点击「确定」使用AI分析\n点击「取消」手动编辑保存");
+
+        if (useAI) {
+            // 用户选择使用AI分析，继续原有流程
+            handleAnalyze(file);
+        } else {
+            // 用户选择不使用AI分析，直接进入编辑界面
+            frontendLogger.info('[HomeCropComplete]', 'User chose manual entry, skipping AI analysis');
+
+            try {
+                // 压缩图片
+                setAnalysisStep('compressing');
+                const base64Image = await processImageFile(file);
+                setCurrentImage(base64Image);
+
+                // 创建空的ParsedQuestion对象
+                const emptyParsedData: ParsedQuestion = {
+                    questionText: "",
+                    answerText: "",
+                    analysis: "",
+                    knowledgePoints: [],
+                    wrongAnswerText: "",
+                    mistakeAnalysis: "",
+                    mistakeStatus: "unknown",
+                    subject: "其他", // 设置默认科目
+                    requiresImage: true,
+                };
+
+                setAnalysisStep('idle');
+                setParsedData(emptyParsedData);
+                setStep("review");
+
+                frontendLogger.info('[HomeCropComplete]', 'Entered manual edit mode with image');
+            } catch (error) {
+                frontendLogger.error('[HomeCropComplete]', 'Failed to process image for manual entry', {
+                    error: error instanceof Error ? error.message : String(error)
+                });
+                alert(t.common?.messages?.imageProcessFailed || '图片处理失败，请重试');
+                setAnalysisStep('idle');
+            }
+        }
     };
 
     const handleAnalyze = async (file: File) => {

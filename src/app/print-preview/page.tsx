@@ -15,6 +15,7 @@ import {
     getSelectedPrintItems,
     shouldReserveAnswerSpace,
 } from "@/lib/print-preview";
+import { ArrowUpDown } from "lucide-react";
 
 function PrintPreviewContent() {
     const searchParams = useSearchParams();
@@ -27,15 +28,49 @@ function PrintPreviewContent() {
     const [imageScale, setImageScale] = useState(70);
     const [showQuestionText, setShowQuestionText] = useState(false);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [sortBy, setSortBy] = useState<string>("createdAt");
+    const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+    const [showQuestionHeader, setShowQuestionHeader] = useState(true);
 
     useEffect(() => {
         fetchItems();
     }, []);
-    const fetchItems = async () => {
+
+    const toggleSortOrder = () => {
+        const newOrder = sortOrder === "desc" ? "asc" : "desc";
+        setSortOrder(newOrder);
+        // 重新获取数据
+        fetchItemsWithSort(newOrder);
+    };
+
+    const fetchItemsWithSort = async (order: "asc" | "desc") => {
+        setLoading(true);
         try {
             const params = new URLSearchParams(searchParams.toString());
             // 打印预览需要所有符合条件的数据，设置较大的 pageSize
             params.set("pageSize", String(PRINT_PREVIEW_PAGE_SIZE));
+            // 添加排序参数
+            params.set("sortBy", sortBy);
+            params.set("sortOrder", order);
+            const response = await apiClient.get<PaginatedResponse<ErrorItem>>(`/api/error-items/list?${params.toString()}`);
+            setItems(response.items);
+            setSelectedIds(new Set(response.items.map((item) => item.id)));
+        } catch (error) {
+            console.error(error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const fetchItems = async () => {
+        setLoading(true);
+        try {
+            const params = new URLSearchParams(searchParams.toString());
+            // 打印预览需要所有符合条件的数据，设置较大的 pageSize
+            params.set("pageSize", String(PRINT_PREVIEW_PAGE_SIZE));
+            // 添加排序参数
+            params.set("sortBy", sortBy);
+            params.set("sortOrder", sortOrder);
             const response = await apiClient.get<PaginatedResponse<ErrorItem>>(`/api/error-items/list?${params.toString()}`);
             setItems(response.items);
             setSelectedIds(new Set(response.items.map((item) => item.id)));
@@ -94,9 +129,21 @@ function PrintPreviewContent() {
                         <h1 className="text-lg sm:text-xl font-bold flex-1">
                             {t.printPreview?.title || 'Print Preview'} ({countLabel} {t.notebooks?.items || 'items'})
                         </h1>
-                        <Button onClick={handlePrint} size="sm" className="whitespace-nowrap" disabled={selectedItems.length === 0}>
-                            {t.printPreview?.printButton || 'Print / Save PDF'}
-                        </Button>
+                        <div className="flex items-center gap-2">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={toggleSortOrder}
+                                title={sortOrder === "desc" ? "切换为升序" : "切换为降序"}
+                                disabled={loading}
+                            >
+                                <ArrowUpDown className="mr-2 h-4 w-4" />
+                                {sortOrder === "desc" ? "最新→最早" : "最早→最新"}
+                            </Button>
+                            <Button onClick={handlePrint} size="sm" className="whitespace-nowrap" disabled={selectedItems.length === 0}>
+                                {t.printPreview?.printButton || 'Print / Save PDF'}
+                            </Button>
+                        </div>
                     </div>
 
                     {/* Controls Row */}
@@ -116,6 +163,15 @@ function PrintPreviewContent() {
 
                         {/* Toggle Options - Grid on Mobile */}
                         <div className="flex flex-wrap gap-x-3 gap-y-1 sm:gap-4">
+                            <label className="flex items-center gap-1.5 text-xs sm:text-sm cursor-pointer whitespace-nowrap hover:text-primary transition-colors">
+                                <input
+                                    type="checkbox"
+                                    checked={showQuestionHeader}
+                                    onChange={(e) => setShowQuestionHeader(e.target.checked)}
+                                    className="rounded border-gray-300 text-primary focus:ring-primary w-3.5 h-3.5 sm:w-4 sm:h-4"
+                                />
+                                {'显示题目栏'}
+                            </label>
                             <label className="flex items-center gap-1.5 text-xs sm:text-sm cursor-pointer whitespace-nowrap hover:text-primary transition-colors">
                                 <input
                                     type="checkbox"
@@ -216,41 +272,43 @@ function PrintPreviewContent() {
                             className={`mb-4 border-b last:border-b-0 print:break-inside-avoid ${reserveAnswerSpace ? "pb-20 print:pb-16" : "pb-6"}`}
                         >
                             {/* Question Header */}
-                            <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 leading-7">
-                                <span className="text-lg font-bold">
-                                    {t.printPreview?.questionNumber?.replace('{num}', String(index + 1)) || `Question ${index + 1}`}
-                                </span>
-                                {item.subject && (
-                                    <span className="text-sm text-muted-foreground">
-                                        {item.subject.name}
+                            {showQuestionHeader && (
+                                <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 leading-7">
+                                    <span className="text-lg font-bold">
+                                        {t.printPreview?.questionNumber?.replace('{num}', String(index + 1)) || `Question ${index + 1}`}
                                     </span>
-                                )}
-                                {item.gradeSemester && (
-                                    <span className="text-sm text-muted-foreground">
-                                        {item.gradeSemester}
-                                    </span>
-                                )}
-                                {item.paperLevel && (
-                                    <span className="text-sm text-muted-foreground">
-                                        {t.printPreview?.paperLevel || 'Paper Level'}: {item.paperLevel.toUpperCase()}
-                                    </span>
-                                )}
-                                {showTags && tags.length > 0 && (
-                                    <>
-                                        <span className="font-semibold">
-                                            {t.printPreview?.knowledgePoints || 'Knowledge Points'}:
+                                    {item.subject && (
+                                        <span className="text-sm text-muted-foreground">
+                                            {item.subject.name}
                                         </span>
-                                        {tags.map((tag, tagIndex) => (
-                                            <span
-                                                key={`${tag}-${tagIndex}`}
-                                                className="px-2 py-1 bg-muted rounded text-sm"
-                                            >
-                                                {tag}
+                                    )}
+                                    {item.gradeSemester && (
+                                        <span className="text-sm text-muted-foreground">
+                                            {item.gradeSemester}
+                                        </span>
+                                    )}
+                                    {item.paperLevel && (
+                                        <span className="text-sm text-muted-foreground">
+                                            {t.printPreview?.paperLevel || 'Paper Level'}: {item.paperLevel.toUpperCase()}
+                                        </span>
+                                    )}
+                                    {showTags && tags.length > 0 && (
+                                        <>
+                                            <span className="font-semibold">
+                                                {t.printPreview?.knowledgePoints || 'Knowledge Points'}:
                                             </span>
-                                        ))}
-                                    </>
-                                )}
-                            </div>
+                                            {tags.map((tag, tagIndex) => (
+                                                <span
+                                                    key={`${tag}-${tagIndex}`}
+                                                    className="px-2 py-1 bg-muted rounded text-sm"
+                                                >
+                                                    {tag}
+                                                </span>
+                                            ))}
+                                        </>
+                                    )}
+                                </div>
+                            )}
 
                             {/* Original Image or Text */}
                             {showQuestionText && item.questionText ? (
