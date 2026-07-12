@@ -56,10 +56,10 @@ dist-scripts
 /playwright/.cache/
 
 # Local Database
-*.db
-*.db-journal
-*.sqlite
-*.sqlite-journal
+#*.db
+#*.db-journal
+#*.sqlite
+#*.sqlite-journal
 
 # Logs & Output
 *.log
@@ -67,5 +67,5 @@ test_output*.txt
 upload_test_output*.txt
 
 # data
-/data/
+#/data/
 .next-prebuilt/

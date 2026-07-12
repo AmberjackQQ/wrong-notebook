@@ -767,6 +767,26 @@ export function SettingsDialog() {
                                     {t.settings?.general?.timeoutDesc || "Increase this value if you experience frequent timeouts during AI analysis."}
                                 </p>
                             </div>
+
+                            <div className="space-y-2 pt-4 border-t">
+                                <div className="flex items-center justify-between">
+                                    <Label>{t.settings?.general?.defaultUseAI || "Default Use AI Analysis"}</Label>
+                                    <input
+                                        type="checkbox"
+                                        checked={config.defaultUseAI ?? true}
+                                        onChange={(e) => {
+                                            setConfig(prev => ({
+                                                ...prev,
+                                                defaultUseAI: e.target.checked
+                                            }));
+                                        }}
+                                        className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary"
+                                    />
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                    {t.settings?.general?.defaultUseAIDesc || "When enabled, AI analysis will be used by default after image upload. Disable to always enter manual edit mode."}
+                                </p>
+                            </div>
                         </div>
                         <Button onClick={handleSaveSettings} disabled={saving} className="w-full">
                             {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

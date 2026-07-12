@@ -26,7 +26,22 @@
       "Bash(mkdir -p data)",
       "Bash(cp prisma/dev.db data/dev.db)",
       "Bash(git add *)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(curl -s http://localhost:3000/api/version)",
+      "Bash(curl -s -I http://localhost:3000/)",
+      "Bash(curl -s http://localhost:3000/ -o /dev/null -w \"HTTP Status: %{http_code}\\\\n\")",
+      "Bash(curl -I http://www.a1a1.icu)",
+      "Bash(curl *)",
+      "Bash(netstat -tuln)",
+      "Bash(ssh *)",
+      "Bash(lsof -ti:3000)",
+      "Bash(gh repo *)",
+      "Bash(git config *)",
+      "Bash(gh auth *)",
+      "Bash(where gh *)",
+      "Bash(git restore *)",
+      "Bash(git checkout *)",
+      "Bash(git reset *)"
     ]
   }
 }

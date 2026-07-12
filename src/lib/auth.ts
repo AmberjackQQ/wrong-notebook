@@ -28,7 +28,8 @@ export const authOptions: NextAuthOptions = {
                 path: "/",
                 // Only use secure cookies if explicitly running on HTTPS (via NEXTAUTH_URL)
                 // This enables HTTP local IP access in Docker/Production if NEXTAUTH_URL is unset
-                secure: process.env.NODE_ENV === "production" && process.env.NEXTAUTH_URL?.startsWith("https"),
+                // 强制使用 HTTP cookie，因为 CloudFlare 到源服务器是 HTTP 连接
+                secure: false,
             },
         },
     },

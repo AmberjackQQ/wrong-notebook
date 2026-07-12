@@ -113,15 +113,20 @@ function HomeContent() {
         // Convert Blob to File
         const file = new File([croppedBlob], "cropped-image.jpg", { type: "image/jpeg" });
 
-        // 询问用户是否使用AI分析
-        const useAI = confirm(t.common?.messages?.useAIAnalysis || "是否使用AI分析题目？\n\n点击「确定」使用AI分析\n点击「取消」手动编辑保存");
+        // 根据设置决定是否使用AI分析，默认为true以保持向后兼容性
+        const useAI = config?.defaultUseAI ?? true;
+
+        frontendLogger.info('[HomeCropComplete]', 'AI analysis setting', {
+            defaultUseAI: config?.defaultUseAI,
+            useAI: useAI
+        });
 
         if (useAI) {
-            // 用户选择使用AI分析，继续原有流程
+            // 使用AI分析，继续原有流程
             handleAnalyze(file);
         } else {
-            // 用户选择不使用AI分析，直接进入编辑界面
-            frontendLogger.info('[HomeCropComplete]', 'User chose manual entry, skipping AI analysis');
+            // 不使用AI分析，直接进入编辑界面
+            frontendLogger.info('[HomeCropComplete]', 'Manual entry mode, skipping AI analysis');
 
             try {
                 // 压缩图片
@@ -647,6 +652,17 @@ function HomeContent() {
                     />
                 )}
 
+            </div>
+
+            {/* 备案信息 */}
+            <div className="text-center text-xs text-gray-500 py-4">
+                <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" className="hover:text-gray-700">
+                    京ICP备2026004308号
+                </a>
+                {" | "}
+                <a href="http://www.beian.gov.cn/portal/index.do" target="_blank" rel="noopener noreferrer" className="hover:text-gray-700">
+                    京公网安备11010502059294号
+                </a>
             </div>
         </main>
     );

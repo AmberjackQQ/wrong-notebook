@@ -95,6 +95,18 @@ export default function LoginPage() {
                     </form>
                 </CardContent>
             </Card>
+            {/* 备案信息 */}
+            <div className="fixed bottom-4 left-0 right-0 text-center">
+                <div className="text-xs text-gray-500">
+                    <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" className="hover:text-gray-700">
+                        京ICP备2026004308号
+                    </a>
+                    {" | "}
+                    <a href="http://www.beian.gov.cn/portal/index.do" target="_blank" rel="noopener noreferrer" className="hover:text-gray-700">
+                        京公网安备11010502059294号
+                    </a>
+                </div>
+            </div>
         </div>
     );
 }

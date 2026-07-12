@@ -360,6 +360,8 @@ export const translations = {
             general: {
                 timeoutLabel: "AI Analysis Timeout (Seconds)",
                 timeoutDesc: "Increase this value if you experience frequent timeouts during AI analysis.",
+                defaultUseAI: "Default Use AI Analysis",
+                defaultUseAIDesc: "When enabled, AI analysis will be used by default after image upload. Disable to always enter manual edit mode.",
             },
             tabs: {
                 general: "General",
@@ -1010,6 +1012,8 @@ export const translations = {
             general: {
                 timeoutLabel: "AI 分析超时时间 (秒)",
                 timeoutDesc: "如果 AI 分析频繁超时，请增加此值。",
+                defaultUseAI: "默认使用 AI 分析",
+                defaultUseAIDesc: "启用后，上传图片后将默认使用 AI 分析。禁用后总是进入手动编辑模式。",
             },
             tabs: {
                 general: "通用",

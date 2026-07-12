@@ -135,6 +135,7 @@ export interface AppConfig {
     timeouts?: {
         analyze?: number; // 毫秒
     };
+    defaultUseAI?: boolean; // 默认使用AI分析
 }
 
 
