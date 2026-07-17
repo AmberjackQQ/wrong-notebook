@@ -11,6 +11,11 @@ interface MarkdownRendererProps {
 }
 
 export function MarkdownRenderer({ content, className = '' }: MarkdownRendererProps) {
+    // Handle null or undefined content
+    if (!content) {
+        return <div className={`markdown-content overflow-x-auto min-w-0 ${className}`}></div>;
+    }
+
     // Preprocess content to ensure proper paragraph breaks and LaTeX rendering
     // Convert single line breaks to double line breaks for better readability
     const processedContent = content

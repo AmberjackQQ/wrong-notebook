@@ -33,7 +33,17 @@ if [ ! -s "$TARGET_DB" ]; then
         echo "[Entrypoint] Source database not found at $SOURCE_DB. Initializing with migrations."
     fi
 else
-    echo "[Entrypoint] Database already exists at $TARGET_DB."
+    echo "[Entrypoint] Database already exists at $TARGET_DB. Preserving existing data."
+    # Ensure correct permissions for existing database
+    chown nextjs:nodejs "$TARGET_DB"
+    # Create marker if it doesn't exist
+    if [ ! -f "$SEED_MARKER" ]; then
+        touch "$SEED_MARKER"
+    fi
+    # Create version file if it doesn't exist
+    if [ ! -f "$VERSION_FILE" ]; then
+        echo "$CURRENT_VERSION" > "$VERSION_FILE"
+    fi
 fi
 
 # Check for version upgrade

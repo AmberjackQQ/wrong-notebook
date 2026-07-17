@@ -41,7 +41,27 @@
       "Bash(where gh *)",
       "Bash(git restore *)",
       "Bash(git checkout *)",
-      "Bash(git reset *)"
+      "Bash(git reset *)",
+      "Bash(git commit *)",
+      "Bash(choco *)",
+      "Bash(scoop --version)",
+      "Bash(winget --version)",
+      "Bash(winget install *)",
+      "Bash(tasklist)",
+      "Bash(findstr winget *)",
+      "Bash(pkill -f \"gh auth login\")",
+      "Bash(git remote *)",
+      "Bash(git push *)",
+      "Bash(git check-ignore *)",
+      "Bash(sqlite3 *)",
+      "Bash(node *)",
+      "Bash(findstr node *)",
+      "Bash(docker-compose down *)",
+      "Bash(findstr wrong-notebook *)",
+      "Bash(docker-compose restart *)",
+      "Bash(pkill -f \"next dev\")",
+      "Bash(tasklist *)",
+      "Bash(git diff *)"
     ]
   }
 }

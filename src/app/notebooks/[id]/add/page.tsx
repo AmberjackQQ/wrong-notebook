@@ -106,7 +106,43 @@ export default function AddErrorPage() {
     const handleCropComplete = async (croppedBlob: Blob) => {
         setIsCropperOpen(false);
         const file = new File([croppedBlob], "cropped-image.jpg", { type: "image/jpeg" });
-        handleAnalyze(file);
+
+        // Check if AI analysis is disabled in config
+        if (config?.defaultUseAI === false) {
+            // Skip AI analysis, go directly to review page with empty data
+            frontendLogger.info('[AddError]', 'AI analysis disabled by config, skipping to review');
+            try {
+                setAnalysisStep('compressing');
+                const base64Image = await processImageFile(file);
+                setCurrentImage(base64Image);
+                setAnalysisStep('processing');
+                setProgress(100);
+
+                // Set empty parsed data for manual entry
+                setParsedData({
+                    questionText: "",
+                    answerText: "",
+                    analysis: "",
+                    knowledgePoints: [],
+                    wrongAnswerText: "",
+                    mistakeAnalysis: "",
+                    mistakeStatus: "unknown",
+                    subject: (notebook?.name as any) || "数学",
+                    requiresImage: true,
+                });
+                setStep("review");
+            } catch (error: any) {
+                frontendLogger.error('[AddError]', 'Failed to process image for manual entry', {
+                    error: error.message || String(error)
+                });
+                alert('Failed to process image. Please try again.');
+            } finally {
+                setAnalysisStep('idle');
+            }
+        } else {
+            // Proceed with AI analysis
+            handleAnalyze(file);
+        }
     };
 
     const handleAnalyze = async (file: File) => {

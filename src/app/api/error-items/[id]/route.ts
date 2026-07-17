@@ -75,7 +75,7 @@ export async function PUT(
         }
 
         const body = await req.json();
-        const { knowledgePoints, gradeSemester, paperLevel, questionText, answerText, analysis, subjectId,  wrongAnswerText, mistakeAnalysis, mistakeStatus, geogebraCommands, createdAt } = body;
+        const { knowledgePoints, gradeSemester, paperLevel, questionText, questionImages, answerText, answerImages, analysis, analysisImages, subjectId,  wrongAnswerText, mistakeAnalysis, mistakeStatus, geogebraCommands, createdAt, answerTime } = body;
 
         const errorItem = await prisma.errorItem.findUnique({
             where: { id },
@@ -95,8 +95,11 @@ export async function PUT(
         if (gradeSemester !== undefined) updateData.gradeSemester = gradeSemester;
         if (paperLevel !== undefined) updateData.paperLevel = paperLevel;
         if (questionText !== undefined) updateData.questionText = questionText;
-        if (answerText !== undefined) updateData.answerText = answerText;
-        if (analysis !== undefined) updateData.analysis = analysis;
+        if (questionImages !== undefined) updateData.questionImages = questionImages || null;
+        if (answerText !== undefined) updateData.answerText = answerText || null; // 空字符串转null
+        if (answerImages !== undefined) updateData.answerImages = answerImages || null;
+        if (analysis !== undefined) updateData.analysis = analysis || null; // 空字符串转null
+        if (analysisImages !== undefined) updateData.analysisImages = analysisImages || null;
         if (wrongAnswerText !== undefined) updateData.wrongAnswerText = wrongAnswerText || null;
         if (mistakeAnalysis !== undefined) updateData.mistakeAnalysis = mistakeAnalysis || null;
         if (subjectId !== undefined) {
@@ -121,6 +124,13 @@ export async function PUT(
             const parsedDate = new Date(createdAt);
             if (!isNaN(parsedDate.getTime())) {
                 updateData.createdAt = parsedDate;
+            }
+        }
+        if (answerTime !== undefined) {
+            // 验证时间格式
+            const parsedDate = new Date(answerTime);
+            if (!isNaN(parsedDate.getTime())) {
+                updateData.answerTime = parsedDate;
             }
         }
 
@@ -183,7 +193,7 @@ export async function PUT(
             updateData.knowledgePoints = JSON.stringify(tagNames);
         }
 
-        logger.info({ id }, 'Updating error item');
+        logger.info({ id, updateData }, 'Updating error item');
 
         const updated = await prisma.errorItem.update({
             where: { id },
@@ -192,8 +202,8 @@ export async function PUT(
         });
 
         return NextResponse.json(updated);
-    } catch (error) {
-        logger.error({ error }, 'Error updating item');
-        return internalError("Failed to update error item");
+    } catch (error: any) {
+        logger.error({ error, message: error?.message, stack: error?.stack }, 'Error updating item');
+        return internalError(`Failed to update error item: ${error?.message || 'Unknown error'}`);
     }
 }

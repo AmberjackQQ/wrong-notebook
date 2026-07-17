@@ -53,8 +53,11 @@ export interface ErrorItem {
     originalImageUrl: string;
     ocrText?: string | null;
     questionText?: string | null;
+    questionImages?: string | null; // JSON array of image objects
     answerText?: string | null;
+    answerImages?: string | null; // JSON array of image objects
     analysis?: string | null;
+    analysisImages?: string | null; // JSON array of image objects
     wrongAnswerText?: string | null;
     mistakeAnalysis?: string | null;
     mistakeStatus?: 'not_attempted' | 'wrong_attempt' | 'unknown' | string | null;
@@ -68,6 +71,7 @@ export interface ErrorItem {
     masteryLevel: number;
     gradeSemester?: string | null;
     paperLevel?: string | null;
+    answerTime?: string | null; // 答题时间
 
     createdAt: string;
     updatedAt: string;

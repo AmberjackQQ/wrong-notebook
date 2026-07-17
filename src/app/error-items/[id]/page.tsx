@@ -1,11 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
+// 添加 CaptureController 类型声明
+declare global {
+    interface Window {
+        CaptureController: {
+            new(): {
+                setFocusBehavior(behavior: 'no-focus-change' | 'focus-capturing-application'): void;
+            };
+        };
+    }
+}
+
+import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, CheckCircle, XCircle, RefreshCw, Trash2, Edit, Save, X, Box, Loader2, Plus, ChevronDown } from "lucide-react";
+import { ArrowLeft, CheckCircle, XCircle, RefreshCw, Trash2, Edit, Save, X, Box, Loader2, Plus, ChevronDown, Monitor } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import Link from "next/link";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -20,6 +31,7 @@ import { getMistakeStatusLabel, normalizeMistakeStatusForSave } from "@/lib/mist
 import { NotebookSelector } from "@/components/notebook-selector";
 import { GeogebraDemo } from "@/components/geogebra-demo";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { RichTextEditorWithImage } from "@/components/rich-text-editor-with-image";
 
 interface KnowledgeTag {
     id: string;
@@ -29,8 +41,11 @@ interface KnowledgeTag {
 interface ErrorItemDetail {
     id: string;
     questionText: string;
+    questionImages?: string | null; // JSON array of image objects
     answerText: string;
+    answerImages?: string | null; // JSON array of image objects
     analysis: string;
+    analysisImages?: string | null; // JSON array of image objects
     wrongAnswerText?: string | null;
     mistakeAnalysis?: string | null;
     mistakeStatus?: string | null;
@@ -46,6 +61,7 @@ interface ErrorItemDetail {
     } | null;
     gradeSemester?: string | null;
     paperLevel?: string | null;
+    answerTime?: string | null; // 答题时间
     geogebraCommands?: string | null;
     createdAt: string; // 添加导入时间字段
     updatedAt?: string;
@@ -60,6 +76,7 @@ export default function ErrorDetailPage() {
     const [isEditingNotes, setIsEditingNotes] = useState(false);
     const [notesInput, setNotesInput] = useState("");
     const [isImageViewerOpen, setIsImageViewerOpen] = useState(false);
+    const [currentImageUrl, setCurrentImageUrl] = useState<string | null>(null);
     const [isEditingTags, setIsEditingTags] = useState(false);
     const [tagsInput, setTagsInput] = useState<string[]>([]);
     const [isEditingMetadata, setIsEditingMetadata] = useState(false);
@@ -77,6 +94,23 @@ export default function ErrorDetailPage() {
     const [newSourceName, setNewSourceName] = useState("");
     const [isAddingSource, setIsAddingSource] = useState(false);
     const [sourcePopoverOpen, setSourcePopoverOpen] = useState(false);
+    const [isScreenshotting, setIsScreenshotting] = useState(false);
+    const [screenshotPreview, setScreenshotPreview] = useState<string | null>(null);
+    const [screenshotStream, setScreenshotStream] = useState<MediaStream | null>(null);
+    const [cropArea, setCropArea] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+    const [isSelectingArea, setIsSelectingArea] = useState(false);
+    const [selectionStart, setSelectionStart] = useState<{ x: number; y: number } | null>(null);
+    const [imagePosition, setImagePosition] = useState({ x: 0, y: 0, scale: 1 });
+    const previewImageRef = useRef<HTMLImageElement>(null);
+
+    // 解析截图相关状态
+    const [isAnalysisScreenshotting, setIsAnalysisScreenshotting] = useState(false);
+    const [analysisScreenshotPreview, setAnalysisScreenshotPreview] = useState<string | null>(null);
+    const [analysisScreenshotStream, setAnalysisScreenshotStream] = useState<MediaStream | null>(null);
+    const [analysisCropArea, setAnalysisCropArea] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+    const [isAnalysisSelectingArea, setIsAnalysisSelectingArea] = useState(false);
+    const [analysisSelectionStart, setAnalysisSelectionStart] = useState<{ x: number; y: number } | null>(null);
+    const analysisPreviewImageRef = useRef<HTMLImageElement>(null);
 
     useEffect(() => {
         // Fetch user info for education stage
@@ -88,6 +122,25 @@ export default function ErrorDetailPage() {
             })
             .catch(err => console.error("Failed to fetch user info:", err));
 
+        // Cleanup function to stop screenshot stream when component unmounts
+        return () => {
+            if (screenshotStream) {
+                screenshotStream.getTracks().forEach(track => track.stop());
+            }
+        };
+    }, [screenshotStream]);
+
+    // Cleanup analysis screenshot stream when component unmounts
+    useEffect(() => {
+        return () => {
+            if (analysisScreenshotStream) {
+                analysisScreenshotStream.getTracks().forEach(track => track.stop());
+                console.log('🧹 Analysis screenshot stream cleaned up');
+            }
+        };
+    }, [analysisScreenshotStream]);
+
+    useEffect(() => {
         // Fetch custom question sources
         apiClient.get<{ id: string; name: string }[]>("/api/question-sources")
             .then(sources => {
@@ -199,6 +252,710 @@ export default function ErrorDetailPage() {
             console.error("Failed to delete custom source:", error);
             alert(error.message || '删除失败，请稍后重试');
         }
+    };
+
+    // 检查是否支持屏幕截图
+    const isScreenshotSupported = () => {
+        return typeof navigator !== 'undefined' &&
+            'mediaDevices' in navigator &&
+            'getDisplayMedia' in navigator.mediaDevices;
+    };
+
+    // 屏幕截图功能
+    const handleScreenshot = async () => {
+        if (!isScreenshotSupported()) {
+            alert('您的浏览器不支持屏幕截图功能');
+            return;
+        }
+
+        setIsScreenshotting(true);
+
+        try {
+            // 创建 CaptureController 来控制焦点行为
+            let controller;
+            if ('CaptureController' in window) {
+                controller = new (window as any).CaptureController();
+            }
+
+            // 请求屏幕共享权限
+            const displayMediaOptions: DisplayMediaStreamOptions & {
+                preferCurrentTab?: boolean;
+                controller?: any;
+                video?: {
+                    cursor: "always" | "never" | "motion";
+                };
+            } = {
+                video: {
+                    cursor: "always" as const
+                },
+                audio: false,
+            };
+
+            if (controller) {
+                (displayMediaOptions as any).controller = controller;
+            }
+
+            const stream = await navigator.mediaDevices.getDisplayMedia(displayMediaOptions);
+
+            // 保存流以供后续使用
+            setScreenshotStream(stream);
+
+            // 获取视频轨道并检查捕获类型
+            const [videoTrack] = stream.getVideoTracks();
+            const settings = videoTrack.getSettings();
+            const displaySurface = (settings as any).displaySurface;
+
+            // 如果是标签页或窗口，设置不切换焦点
+            if (controller && (displaySurface === 'browser' || displaySurface === 'window')) {
+                try {
+                    controller.setFocusBehavior('no-focus-change');
+                    console.log('✅ 已设置不切换焦点行为');
+                } catch (e) {
+                    console.warn('⚠️ 无法设置焦点行为:', e);
+                }
+            }
+
+            // 创建视频元素
+            const video = document.createElement('video');
+            video.srcObject = stream;
+            video.muted = true;
+            video.autoplay = true;
+            video.playsInline = true;
+
+            // 等待视频准备并播放
+            await new Promise<void>((resolve, reject) => {
+                video.onloadedmetadata = () => {
+                    video.play().then(() => {
+                        resolve();
+                    }).catch(reject);
+                };
+                video.onerror = reject;
+            });
+
+            // 等待一帧渲染（确保稳定）
+            await new Promise(resolve => setTimeout(resolve, 500));
+
+            // 检查视频尺寸
+            if (video.videoWidth === 0 || video.videoHeight === 0) {
+                throw new Error('视频没有有效尺寸');
+            }
+
+            // 创建canvas并捕获预览
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+                throw new Error('无法获取canvas上下文');
+            }
+
+            // 绘制视频帧
+            ctx.drawImage(video, 0, 0);
+
+            // 转换为dataURL并显示预览
+            const previewDataUrl = canvas.toDataURL('image/png');
+            setScreenshotPreview(previewDataUrl);
+
+        } catch (error) {
+            console.error('Screenshot failed:', error);
+            if (error instanceof Error) {
+                if (error.name === 'NotAllowedError') {
+                    alert('您拒绝了屏幕截图权限');
+                } else {
+                    alert(`屏幕截图失败: ${error.message}`);
+                }
+            }
+            setIsScreenshotting(false);
+        }
+    };
+
+    // 确认截图
+    const confirmScreenshot = () => {
+        const processAndAddImage = (imageDataUrl: string) => {
+            const newImage = {
+                id: `screenshot-${Date.now()}`,
+                dataUrl: imageDataUrl,
+                name: `屏幕截图-${Date.now()}.png`
+            };
+
+            console.log('📤 准备添加图片到答案列表:', {
+                id: newImage.id,
+                dataSize: imageDataUrl.length,
+                currentImagesCount: answerImages.length
+            });
+
+            setAnswerImages(prev => {
+                const updated = [...prev, newImage];
+                console.log('✅ 图片已添加，新的总数:', updated.length);
+                return updated;
+            });
+
+            cleanupScreenshot();
+        };
+
+        // 如果有框选区域，进行裁剪
+        if (cropArea && screenshotPreview) {
+            console.log('✂️ 开始裁剪图片，框选区域:', cropArea);
+
+            const img = new Image();
+            img.crossOrigin = "anonymous";
+
+            img.onload = () => {
+                try {
+                    console.log('📷 原始图片尺寸:', {
+                        natural: { width: img.naturalWidth, height: img.naturalHeight }
+                    });
+
+                    // 验证原始图片是否有效
+                    if (img.naturalWidth === 0 || img.naturalHeight === 0) {
+                        console.error('❌ 原始图片无效');
+                        alert('原始图片无效');
+                        return;
+                    }
+
+                    // 使用ref获取预览图片的实际显示尺寸
+                    let displayWidth = 0;
+                    let displayHeight = 0;
+
+                    if (previewImageRef.current) {
+                        const rect = previewImageRef.current.getBoundingClientRect();
+                        displayWidth = rect.width;
+                        displayHeight = rect.height;
+                        console.log('📐 使用ref获取的预览图片显示尺寸:', { displayWidth, displayHeight });
+                    } else {
+                        console.warn('⚠️ previewImageRef.current为null，尝试查找DOM元素');
+                        const previewImages = document.querySelectorAll('img[src*="data:image"]');
+                        for (const image of previewImages) {
+                            const rect = image.getBoundingClientRect();
+                            if (rect.width > 100 && rect.height > 100) {
+                                displayWidth = rect.width;
+                                displayHeight = rect.height;
+                                console.log('📐 通过DOM查找获取的尺寸:', { displayWidth, displayHeight });
+                                break;
+                            }
+                        }
+                    }
+
+                    // 如果无法获取显示尺寸，使用原始图片尺寸
+                    if (displayWidth === 0 || displayHeight === 0) {
+                        console.warn('⚠️ 无法获取显示尺寸，使用原始图片尺寸');
+                        displayWidth = img.naturalWidth;
+                        displayHeight = img.naturalHeight;
+                    }
+
+                    // 计算精确的缩放比例
+                    const scaleX = img.naturalWidth / displayWidth;
+                    const scaleY = img.naturalHeight / displayHeight;
+
+                    console.log('📏 尺寸比例计算:', {
+                        natural: { width: img.naturalWidth, height: img.naturalHeight },
+                        display: { width: displayWidth, height: displayHeight },
+                        scale: { x: scaleX.toFixed(4), y: scaleY.toFixed(4) }
+                    });
+
+                    // 根据框选区域和比例计算实际裁剪区域
+                    const actualX = cropArea.x * scaleX;
+                    const actualY = cropArea.y * scaleY;
+                    const actualWidth = cropArea.width * scaleX;
+                    const actualHeight = cropArea.height * scaleY;
+
+                    console.log('✂️ 计算的裁剪区域:', {
+                        display: cropArea,
+                        actual: {
+                            x: actualX.toFixed(2),
+                            y: actualY.toFixed(2),
+                            width: actualWidth.toFixed(2),
+                            height: actualHeight.toFixed(2)
+                        }
+                    });
+
+                    // 验证并调整裁剪区域，确保在有效范围内
+                    let finalX = Math.max(0, Math.min(actualX, img.naturalWidth - 1));
+                    let finalY = Math.max(0, Math.min(actualY, img.naturalHeight - 1));
+                    let finalWidth = Math.min(actualWidth, img.naturalWidth - finalX);
+                    let finalHeight = Math.min(actualHeight, img.naturalHeight - finalY);
+
+                    // 确保尺寸至少为1px
+                    finalWidth = Math.max(1, finalWidth);
+                    finalHeight = Math.max(1, finalHeight);
+
+                    console.log('🔧 调整后的最终裁剪区域:', {
+                        x: finalX.toFixed(2),
+                        y: finalY.toFixed(2),
+                        width: finalWidth.toFixed(2),
+                        height: finalHeight.toFixed(2)
+                    });
+
+                    if (finalWidth <= 0 || finalHeight <= 0) {
+                        console.error('❌ 调整后的区域仍然无效');
+                        alert('选择的区域太小，请重新选择');
+                        return;
+                    }
+
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    if (!ctx) {
+                        console.error('❌ 无法获取canvas上下文');
+                        alert('图片处理失败');
+                        return;
+                    }
+
+                    canvas.width = finalWidth;
+                    canvas.height = finalHeight;
+
+                    // 设置白色背景
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, finalWidth, finalHeight);
+
+                    console.log('🎨 开始canvas绘制操作');
+
+                    ctx.drawImage(
+                        img,
+                        finalX, finalY, finalWidth, finalHeight,
+                        0, 0, finalWidth, finalHeight
+                    );
+
+                    const croppedDataUrl = canvas.toDataURL('image/png');
+                    console.log('✅ 裁剪完成，数据大小:', croppedDataUrl.length);
+
+                    // 验证结果
+                    if (croppedDataUrl.length < 100) {
+                        console.error('❌ 裁剪结果数据无效');
+                        alert('裁剪结果无效');
+                        return;
+                    }
+
+                    processAndAddImage(croppedDataUrl);
+                } catch (error) {
+                    console.error('❌ 裁剪处理失败:', error);
+                    alert('图片处理失败: ' + (error instanceof Error ? error.message : String(error)));
+                }
+            };
+
+            img.onerror = (error) => {
+                console.error('❌ 图片加载失败:', error);
+                alert('图片加载失败');
+            };
+
+            img.src = screenshotPreview;
+            return;
+        } else if (screenshotPreview) {
+            console.log('📷 直接使用完整截图');
+            processAndAddImage(screenshotPreview);
+        } else {
+            console.error('❌ 没有截图数据');
+            alert('没有可用的截图');
+        }
+    };
+
+    // 取消截图
+    const cancelScreenshot = () => {
+        cleanupScreenshot();
+    };
+
+    // 清理截图状态
+    const cleanupScreenshot = () => {
+        if (screenshotStream) {
+            screenshotStream.getTracks().forEach(track => track.stop());
+            setScreenshotStream(null);
+        }
+        setScreenshotPreview(null);
+        setIsScreenshotting(false);
+        setCropArea(null);
+        setIsSelectingArea(false);
+        setSelectionStart(null);
+    };
+
+    // 开始框选
+    const handleStartSelection = (e: React.MouseEvent<HTMLDivElement>) => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+
+        setSelectionStart({ x, y });
+        setIsSelectingArea(true);
+        setCropArea(null);
+    };
+
+    // 更新框选区域
+    const handleUpdateSelection = (e: React.MouseEvent<HTMLDivElement>) => {
+        if (!isSelectingArea || !selectionStart) return;
+
+        const rect = e.currentTarget.getBoundingClientRect();
+        const currentX = e.clientX - rect.left;
+        const currentY = e.clientY - rect.top;
+
+        const x = Math.min(selectionStart.x, currentX);
+        const y = Math.min(selectionStart.y, currentY);
+        const width = Math.abs(currentX - selectionStart.x);
+        const height = Math.abs(currentY - selectionStart.y);
+
+        setCropArea({ x, y, width, height });
+    };
+
+    // 结束框选
+    const handleEndSelection = () => {
+        setIsSelectingArea(false);
+        setSelectionStart(null);
+    };
+
+    // 清除框选
+    const clearCropArea = () => {
+        setCropArea(null);
+    };
+
+    // === 解析截图功能 ===
+    const handleAnalysisScreenshot = async () => {
+        if (!isScreenshotSupported()) {
+            alert('您的浏览器不支持屏幕截图功能');
+            return;
+        }
+
+        setIsAnalysisScreenshotting(true);
+
+        try {
+            // 创建 CaptureController 来控制焦点行为
+            let controller;
+            if ('CaptureController' in window) {
+                controller = new (window as any).CaptureController();
+            }
+
+            // 请求屏幕共享权限
+            const displayMediaOptions: DisplayMediaStreamOptions & {
+                preferCurrentTab?: boolean;
+                controller?: any;
+                video?: {
+                    cursor: "always" | "never" | "motion";
+                };
+            } = {
+                video: {
+                    cursor: "always" as const
+                },
+                audio: false,
+            };
+
+            if (controller) {
+                (displayMediaOptions as any).controller = controller;
+            }
+
+            const stream = await navigator.mediaDevices.getDisplayMedia(displayMediaOptions);
+
+            // 保存流以供后续使用
+            setAnalysisScreenshotStream(stream);
+
+            // 获取视频轨道并检查捕获类型
+            const [videoTrack] = stream.getVideoTracks();
+            const settings = videoTrack.getSettings();
+            const displaySurface = (settings as any).displaySurface;
+
+            // 如果是标签页或窗口，设置不切换焦点
+            if (controller && (displaySurface === 'browser' || displaySurface === 'window')) {
+                try {
+                    controller.setFocusBehavior('no-focus-change');
+                    console.log('✅ 已设置不切换焦点行为');
+                } catch (e) {
+                    console.warn('⚠️ 无法设置焦点行为:', e);
+                }
+            }
+
+            // 创建视频元素
+            const video = document.createElement('video');
+            video.srcObject = stream;
+            video.muted = true;
+            video.autoplay = true;
+            video.playsInline = true;
+
+            // 等待视频准备并播放
+            await new Promise<void>((resolve, reject) => {
+                video.onloadedmetadata = () => {
+                    video.play().then(() => {
+                        resolve();
+                    }).catch(reject);
+                };
+                video.onerror = reject;
+            });
+
+            // 等待一帧渲染（确保稳定）
+            await new Promise(resolve => setTimeout(resolve, 500));
+
+            // 检查视频尺寸
+            if (video.videoWidth === 0 || video.videoHeight === 0) {
+                throw new Error('视频没有有效尺寸');
+            }
+
+            // 创建canvas并捕获预览
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+                throw new Error('无法获取canvas上下文');
+            }
+
+            // 绘制视频帧
+            ctx.drawImage(video, 0, 0);
+
+            // 转换为dataURL并显示预览
+            const previewDataUrl = canvas.toDataURL('image/png');
+            setAnalysisScreenshotPreview(previewDataUrl);
+
+        } catch (error) {
+            console.error('Analysis screenshot failed:', error);
+            if (error instanceof Error) {
+                if (error.name === 'NotAllowedError') {
+                    alert('您拒绝了屏幕截图权限');
+                } else {
+                    alert(`屏幕截图失败: ${error.message}`);
+                }
+            }
+        } finally {
+            setIsAnalysisScreenshotting(false);
+        }
+    };
+
+    const confirmAnalysisScreenshot = () => {
+        const processAndAddAnalysisImage = (imageDataUrl: string) => {
+            // 验证图片数据是否有效
+            if (!imageDataUrl || imageDataUrl.length < 100) {
+                console.error('❌ 无效的图片数据');
+                alert('图片数据无效');
+                return;
+            }
+
+            const newImage = {
+                id: `analysis-screenshot-${Date.now()}`,
+                dataUrl: imageDataUrl,
+                name: `解析截图-${Date.now()}.png`
+            };
+
+            console.log('📤 准备添加图片到解析列表:', {
+                id: newImage.id,
+                dataSize: imageDataUrl.length,
+                currentImagesCount: analysisImages.length
+            });
+
+            setAnalysisImages(prev => {
+                const updated = [...prev, newImage];
+                console.log('✅ 解析图片已添加，新的总数:', updated.length);
+                return updated;
+            });
+
+            cleanupAnalysisScreenshot();
+        };
+
+        // 如果有框选区域，进行裁剪
+        if (analysisCropArea && analysisScreenshotPreview) {
+            console.log('✂️ 开始裁剪解析图片，框选区域:', analysisCropArea);
+
+            const img = new Image();
+            img.crossOrigin = "anonymous";
+
+            img.onload = () => {
+                try {
+                    console.log('📷 解析原始图片尺寸:', {
+                        natural: { width: img.naturalWidth, height: img.naturalHeight }
+                    });
+
+                    // 验证原始图片是否有效
+                    if (img.naturalWidth === 0 || img.naturalHeight === 0) {
+                        console.error('❌ 原始图片无效');
+                        alert('原始图片无效');
+                        return;
+                    }
+
+                    // 使用ref获取预览图片的实际显示尺寸
+                    let displayWidth = 0;
+                    let displayHeight = 0;
+
+                    if (analysisPreviewImageRef.current) {
+                        const rect = analysisPreviewImageRef.current.getBoundingClientRect();
+                        displayWidth = rect.width;
+                        displayHeight = rect.height;
+                        console.log('📐 使用ref获取的解析预览图片显示尺寸:', { displayWidth, displayHeight });
+                    } else {
+                        console.warn('⚠️ analysisPreviewImageRef.current为null，尝试查找DOM元素');
+                        const previewImages = document.querySelectorAll('img[src*="data:image"]');
+                        for (const image of previewImages) {
+                            const rect = image.getBoundingClientRect();
+                            if (rect.width > 100 && rect.height > 100) {
+                                displayWidth = rect.width;
+                                displayHeight = rect.height;
+                                console.log('📐 通过DOM查找获取的解析图片尺寸:', { displayWidth, displayHeight });
+                                break;
+                            }
+                        }
+                    }
+
+                    // 如果无法获取显示尺寸，使用原始图片尺寸
+                    if (displayWidth === 0 || displayHeight === 0) {
+                        console.warn('⚠️ 无法获取显示尺寸，使用原始图片尺寸');
+                        displayWidth = img.naturalWidth;
+                        displayHeight = img.naturalHeight;
+                    }
+
+                    // 计算精确的缩放比例
+                    const scaleX = img.naturalWidth / displayWidth;
+                    const scaleY = img.naturalHeight / displayHeight;
+
+                    console.log('📏 解析尺寸比例计算:', {
+                        natural: { width: img.naturalWidth, height: img.naturalHeight },
+                        display: { width: displayWidth, height: displayHeight },
+                        scale: { x: scaleX.toFixed(4), y: scaleY.toFixed(4) }
+                    });
+
+                    // 根据框选区域和比例计算实际裁剪区域
+                    const actualX = analysisCropArea.x * scaleX;
+                    const actualY = analysisCropArea.y * scaleY;
+                    const actualWidth = analysisCropArea.width * scaleX;
+                    const actualHeight = analysisCropArea.height * scaleY;
+
+                    console.log('✂️ 计算的解析裁剪区域:', {
+                        display: analysisCropArea,
+                        actual: {
+                            x: actualX.toFixed(2),
+                            y: actualY.toFixed(2),
+                            width: actualWidth.toFixed(2),
+                            height: actualHeight.toFixed(2)
+                        }
+                    });
+
+                    // 验证并调整裁剪区域，确保在有效范围内
+                    let finalX = Math.max(0, Math.min(actualX, img.naturalWidth - 1));
+                    let finalY = Math.max(0, Math.min(actualY, img.naturalHeight - 1));
+                    let finalWidth = Math.min(actualWidth, img.naturalWidth - finalX);
+                    let finalHeight = Math.min(actualHeight, img.naturalHeight - finalY);
+
+                    // 确保尺寸至少为1px
+                    finalWidth = Math.max(1, finalWidth);
+                    finalHeight = Math.max(1, finalHeight);
+
+                    console.log('🔧 调整后的解析最终裁剪区域:', {
+                        x: finalX.toFixed(2),
+                        y: finalY.toFixed(2),
+                        width: finalWidth.toFixed(2),
+                        height: finalHeight.toFixed(2)
+                    });
+
+                    if (finalWidth <= 0 || finalHeight <= 0) {
+                        console.error('❌ 调整后的解析区域仍然无效');
+                        alert('选择的区域太小，请重新选择');
+                        return;
+                    }
+
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    if (!ctx) {
+                        console.error('❌ 无法获取canvas上下文');
+                        alert('图片处理失败');
+                        return;
+                    }
+
+                    canvas.width = finalWidth;
+                    canvas.height = finalHeight;
+
+                    // 设置白色背景
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, finalWidth, finalHeight);
+
+                    console.log('🎨 开始解析canvas绘制操作');
+
+                    ctx.drawImage(
+                        img,
+                        finalX, finalY, finalWidth, finalHeight,
+                        0, 0, finalWidth, finalHeight
+                    );
+
+                    const croppedDataUrl = canvas.toDataURL('image/png');
+                    console.log('✅ 解析裁剪完成，数据大小:', croppedDataUrl.length);
+
+                    // 验证结果
+                    if (croppedDataUrl.length < 100) {
+                        console.error('❌ 解析裁剪结果数据无效');
+                        alert('裁剪结果无效');
+                        return;
+                    }
+
+                    processAndAddAnalysisImage(croppedDataUrl);
+                } catch (error) {
+                    console.error('❌ 解析裁剪处理失败:', error);
+                    alert('图片处理失败: ' + (error instanceof Error ? error.message : String(error)));
+                }
+            };
+
+            img.onerror = (error) => {
+                console.error('❌ 解析图片加载失败:', error);
+                alert('图片加载失败');
+            };
+
+            img.src = analysisScreenshotPreview;
+        } else if (analysisScreenshotPreview) {
+            console.log('📷 直接使用完整解析截图');
+
+            // 验证原始截图数据
+            if (analysisScreenshotPreview.length < 100) {
+                console.error('❌ 原始解析截图数据无效');
+                alert('原始截图数据无效');
+                return;
+            }
+
+            processAndAddAnalysisImage(analysisScreenshotPreview);
+        } else {
+            console.error('❌ 没有解析截图数据');
+            alert('没有可用的截图');
+        }
+    };
+
+    // 清理解析截图状态
+    const cleanupAnalysisScreenshot = () => {
+        if (analysisScreenshotStream) {
+            analysisScreenshotStream.getTracks().forEach(track => track.stop());
+            setAnalysisScreenshotStream(null);
+        }
+        setAnalysisScreenshotPreview(null);
+        setIsAnalysisScreenshotting(false);
+        setAnalysisCropArea(null);
+        setIsAnalysisSelectingArea(false);
+        setAnalysisSelectionStart(null);
+    };
+
+    // 解析开始框选
+    const handleAnalysisStartSelection = (e: React.MouseEvent<HTMLDivElement>) => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+
+        setAnalysisSelectionStart({ x, y });
+        setIsAnalysisSelectingArea(true);
+        setAnalysisCropArea(null);
+    };
+
+    // 解析更新框选区域
+    const handleAnalysisUpdateSelection = (e: React.MouseEvent<HTMLDivElement>) => {
+        if (!isAnalysisSelectingArea || !analysisSelectionStart) return;
+
+        const rect = e.currentTarget.getBoundingClientRect();
+        const currentX = e.clientX - rect.left;
+        const currentY = e.clientY - rect.top;
+
+        const x = Math.min(analysisSelectionStart.x, currentX);
+        const y = Math.min(analysisSelectionStart.y, currentY);
+        const width = Math.abs(currentX - analysisSelectionStart.x);
+        const height = Math.abs(currentY - analysisSelectionStart.y);
+
+        setAnalysisCropArea({ x, y, width, height });
+    };
+
+    // 解析结束框选
+    const handleAnalysisEndSelection = () => {
+        setIsAnalysisSelectingArea(false);
+        setAnalysisSelectionStart(null);
+    };
+
+    // 解析清除框选
+    const clearAnalysisCropArea = () => {
+        setAnalysisCropArea(null);
     };
 
     const toggleMastery = async () => {
@@ -332,12 +1089,16 @@ export default function ErrorDetailPage() {
 
     const [isEditingQuestion, setIsEditingQuestion] = useState(false);
     const [questionInput, setQuestionInput] = useState("");
+    const [questionImages, setQuestionImages] = useState<Array<{ id: string; dataUrl: string; name: string }>>([]);
 
     const [isEditingAnswer, setIsEditingAnswer] = useState(false);
     const [answerInput, setAnswerInput] = useState("");
+    const [answerImages, setAnswerImages] = useState<Array<{ id: string; dataUrl: string; name: string }>>([]);
+    const [answerTimeInput, setAnswerTimeInput] = useState("");
 
     const [isEditingAnalysis, setIsEditingAnalysis] = useState(false);
     const [analysisInput, setAnalysisInput] = useState("");
+    const [analysisImages, setAnalysisImages] = useState<Array<{ id: string; dataUrl: string; name: string }>>([]);
 
     const [isEditingMistake, setIsEditingMistake] = useState(false);
     const [wrongAnswerInput, setWrongAnswerInput] = useState("");
@@ -348,15 +1109,39 @@ export default function ErrorDetailPage() {
     const startEditingQuestion = () => {
         if (item) {
             setQuestionInput(item.questionText);
+            // Parse existing images
+            if (item.questionImages) {
+                try {
+                    const parsedImages = JSON.parse(item.questionImages);
+                    setQuestionImages(parsedImages);
+                } catch (e) {
+                    console.error("Failed to parse question images:", e);
+                    setQuestionImages([]);
+                }
+            } else {
+                setQuestionImages([]);
+            }
             setIsEditingQuestion(true);
         }
     };
 
     const saveQuestionHandler = async () => {
         try {
-            await apiClient.put(`/api/error-items/${item?.id}`, { questionText: questionInput });
+            // 将空图片数组保存为空JSON数组，而不是null
+            const imagesJson = questionImages.length > 0 ? JSON.stringify(questionImages) : '[]';
+            await apiClient.put(`/api/error-items/${item?.id}`, {
+                questionText: questionInput || '',
+                questionImages: imagesJson
+            });
             setIsEditingQuestion(false);
-            if (item) setItem({ ...item, questionText: questionInput });
+            if (item) {
+                setItem({
+                    ...item,
+                    questionText: questionInput || '',
+                    questionImages: imagesJson
+                });
+            }
+            setQuestionImages([]);
             alert(t.common?.messages?.saveSuccess || 'Saved successfully');
         } catch (error) {
             console.error(error);
@@ -367,46 +1152,129 @@ export default function ErrorDetailPage() {
     const cancelEditingQuestion = () => {
         setIsEditingQuestion(false);
         setQuestionInput("");
+        setQuestionImages([]);
     };
 
     // --- Answer Handlers ---
     const startEditingAnswer = () => {
         if (item) {
             setAnswerInput(item.answerText);
+            // Parse existing images
+            if (item.answerImages) {
+                try {
+                    const parsedImages = JSON.parse(item.answerImages);
+                    setAnswerImages(parsedImages);
+                } catch (e) {
+                    console.error("Failed to parse answer images:", e);
+                    setAnswerImages([]);
+                }
+            } else {
+                setAnswerImages([]);
+            }
+            // Set answer time - use existing answer time or default to import time
+            if (item.answerTime) {
+                const answerTime = new Date(item.answerTime);
+                setAnswerTimeInput(answerTime.toISOString().slice(0, 16)); // YYYY-MM-DDTHH:mm
+            } else {
+                // Default to import time (createdAt)
+                const importTime = new Date(item.createdAt);
+                setAnswerTimeInput(importTime.toISOString().slice(0, 16)); // YYYY-MM-DDTHH:mm
+            }
             setIsEditingAnswer(true);
         }
     };
 
     const saveAnswerHandler = async () => {
         try {
-            await apiClient.put(`/api/error-items/${item?.id}`, { answerText: answerInput });
+            // 将空图片数组保存为空JSON数组，而不是null
+            const imagesJson = answerImages.length > 0 ? JSON.stringify(answerImages) : '[]';
+
+            const hasTime = answerTimeInput;
+
+            // Prepare update data
+            const updateData: any = {
+                answerText: (answerInput || '').trim() || null,
+                answerImages: imagesJson
+            };
+
+            // Only include answerTime if it's provided
+            if (hasTime) {
+                const parsedAnswerTime = new Date(answerTimeInput);
+                if (isNaN(parsedAnswerTime.getTime())) {
+                    alert("答题时间格式无效");
+                    return;
+                }
+                updateData.answerTime = parsedAnswerTime.toISOString();
+            }
+
+            await apiClient.put(`/api/error-items/${item?.id}`, updateData);
             setIsEditingAnswer(false);
-            if (item) setItem({ ...item, answerText: answerInput });
+            if (item) {
+                setItem({
+                    ...item,
+                    answerText: ((answerInput || '').trim() || null),
+                    answerImages: imagesJson,
+                    answerTime: updateData.answerTime || item.answerTime
+                } as typeof item);
+            }
+            setAnswerImages([]);
+            setAnswerTimeInput("");
             alert(t.common?.messages?.saveSuccess || 'Saved successfully');
-        } catch (error) {
-            console.error(error);
-            alert(t.common?.messages?.saveFailed || 'Save failed');
+        } catch (error: any) {
+            console.error('Save answer error:', error);
+            const errorMessage = error?.data?.message || error?.message || error?.toString() || 'Unknown error';
+            alert(`保存失败: ${errorMessage}`);
         }
     };
 
     const cancelEditingAnswer = () => {
         setIsEditingAnswer(false);
         setAnswerInput("");
+        setAnswerImages([]);
+        setAnswerTimeInput("");
     };
 
     // --- Analysis Handlers ---
     const startEditingAnalysis = () => {
         if (item) {
             setAnalysisInput(item.analysis);
+            // Parse existing images
+            if (item.analysisImages) {
+                try {
+                    const parsedImages = JSON.parse(item.analysisImages);
+                    setAnalysisImages(parsedImages);
+                } catch (e) {
+                    console.error("Failed to parse analysis images:", e);
+                    setAnalysisImages([]);
+                }
+            } else {
+                setAnalysisImages([]);
+            }
             setIsEditingAnalysis(true);
         }
     };
 
     const saveAnalysisHandler = async () => {
         try {
-            await apiClient.put(`/api/error-items/${item?.id}`, { analysis: analysisInput });
+            // 将空图片数组保存为空JSON数组，而不是null
+            const imagesJson = analysisImages.length > 0 ? JSON.stringify(analysisImages) : '[]';
+
+            // 移除验证限制，允许保存空内容
+            // 用户可以清空解析内容和图片
+
+            await apiClient.put(`/api/error-items/${item?.id}`, {
+                analysis: (analysisInput || '').trim() || null,
+                analysisImages: imagesJson
+            });
             setIsEditingAnalysis(false);
-            if (item) setItem({ ...item, analysis: analysisInput });
+            if (item) {
+                setItem({
+                    ...item,
+                    analysis: (analysisInput || '').trim() || null,
+                    analysisImages: imagesJson
+                } as typeof item);
+            }
+            setAnalysisImages([]);
             alert(t.common?.messages?.saveSuccess || 'Saved successfully');
         } catch (error) {
             console.error(error);
@@ -417,6 +1285,7 @@ export default function ErrorDetailPage() {
     const cancelEditingAnalysis = () => {
         setIsEditingAnalysis(false);
         setAnalysisInput("");
+        setAnalysisImages([]);
     };
 
     // --- Mistake Analysis Handlers ---
@@ -566,7 +1435,10 @@ export default function ErrorDetailPage() {
                                 {item.originalImageUrl && (
                                     <div
                                         className="cursor-pointer hover:opacity-90 transition-opacity"
-                                        onClick={() => setIsImageViewerOpen(true)}
+                                        onClick={() => {
+                                            setCurrentImageUrl(item.originalImageUrl);
+                                            setIsImageViewerOpen(true);
+                                        }}
                                         title={t.detail?.clickToView || 'Click to view full image'}
                                     >
                                         <p className="text-sm font-medium mb-2 text-muted-foreground">
@@ -585,12 +1457,15 @@ export default function ErrorDetailPage() {
 
                                 {isEditingQuestion ? (
                                     <div className="space-y-3">
-                                        <Textarea
+                                        <RichTextEditorWithImage
                                             value={questionInput}
-                                            onChange={(e) => setQuestionInput(e.target.value)}
-                                            placeholder="Enter question text..." // Consider localizing later
+                                            onChange={(text, images) => {
+                                                setQuestionInput(text);
+                                                setQuestionImages(images);
+                                            }}
+                                            placeholder="Enter question text..."
                                             rows={8}
-                                            className="w-full font-mono text-sm"
+                                            existingImages={questionImages}
                                         />
                                         <div className="flex gap-2">
                                             <Button size="sm" onClick={saveQuestionHandler}>
@@ -604,7 +1479,32 @@ export default function ErrorDetailPage() {
                                         </div>
                                     </div>
                                 ) : (
-                                    <MarkdownRenderer content={item.questionText} />
+                                    <div className="space-y-4">
+                                        <MarkdownRenderer content={item.questionText} />
+                                        {item.questionImages && (
+                                            <div className="space-y-2">
+                                                <div className="text-sm font-medium">题目图片：</div>
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    {(() => {
+                                                        try {
+                                                            const images = JSON.parse(item.questionImages);
+                                                            return images.map((img: any, idx: number) => (
+                                                                <div key={idx} className="relative">
+                                                                    <img
+                                                                        src={img.dataUrl}
+                                                                        alt={img.name || `题目图片 ${idx + 1}`}
+                                                                        className="w-full rounded-lg border"
+                                                                    />
+                                                                </div>
+                                                            ));
+                                                        } catch (e) {
+                                                            return null;
+                                                        }
+                                                    })()}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
                                 )}
 
                                 {/* 知识点标签 */}
@@ -958,7 +1858,7 @@ export default function ErrorDetailPage() {
                         <Card className="border-primary/20">
                             <CardHeader>
                                 <div className="flex justify-between items-center">
-                                    <CardTitle className="text-primary">{t.detail.correctAnswer}</CardTitle>
+                                    <CardTitle className="text-primary">做题答案</CardTitle>
                                     {!isEditingAnswer && (
                                         <Button
                                             variant="ghost"
@@ -974,13 +1874,136 @@ export default function ErrorDetailPage() {
                             <CardContent>
                                 {isEditingAnswer ? (
                                     <div className="space-y-3">
-                                        <Textarea
+                                        <div className="space-y-2">
+                                            <label className="text-sm text-muted-foreground">答题时间</label>
+                                            <Input
+                                                type="datetime-local"
+                                                value={answerTimeInput}
+                                                onChange={(e) => setAnswerTimeInput(e.target.value)}
+                                                max={new Date().toISOString().slice(0, 16)}
+                                            />
+                                        </div>
+                                        <RichTextEditorWithImage
                                             value={answerInput}
-                                            onChange={(e) => setAnswerInput(e.target.value)}
+                                            onChange={(text, images) => {
+                                                setAnswerInput(text);
+                                                setAnswerImages(images);
+                                            }}
                                             placeholder="Enter answer..."
                                             rows={5}
-                                            className="w-full font-mono text-sm"
+                                            existingImages={answerImages}
                                         />
+                                        {/* 屏幕截图按钮 */}
+                                        {isScreenshotSupported() && (
+                                            <div className="flex items-center justify-center pt-2">
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={handleScreenshot}
+                                                    disabled={isScreenshotting}
+                                                    className="flex items-center gap-2"
+                                                >
+                                                    {isScreenshotting && !screenshotPreview ? (
+                                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                                    ) : (
+                                                        <Monitor className="h-4 w-4" />
+                                                    )}
+                                                    {(isScreenshotting && !screenshotPreview) ? '选择中...' : '屏幕截图'}
+                                                </Button>
+                                            </div>
+                                        )}
+
+                                        {/* 屏幕截图预览界面 */}
+                                        {screenshotPreview && (
+                                            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                                                <div className="bg-background rounded-lg shadow-xl max-w-4xl w-full space-y-4">
+                                                    <div className="p-4 border-b">
+                                                        <div className="flex justify-between items-center">
+                                                            <div>
+                                                                <h3 className="text-lg font-semibold">确认屏幕截图</h3>
+                                                                <p className="text-sm text-muted-foreground">在图片上拖动鼠标框选要保留的区域，或直接使用整张图片</p>
+                                                            </div>
+                                                            {cropArea && (
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="sm"
+                                                                    onClick={clearCropArea}
+                                                                >
+                                                                    <X className="h-4 w-4 mr-1" />
+                                                                    清除框选
+                                                                </Button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <div className="p-4">
+                                                        <div
+                                                            className="relative inline-block w-full cursor-crosshair"
+                                                            onMouseDown={handleStartSelection}
+                                                            onMouseMove={handleUpdateSelection}
+                                                            onMouseUp={handleEndSelection}
+                                                            onMouseLeave={handleEndSelection}
+                                                        >
+                                                            <img
+                                                                ref={previewImageRef}
+                                                                src={screenshotPreview}
+                                                                alt="屏幕截图预览"
+                                                                className="w-full rounded border"
+                                                                draggable={false}
+                                                                style={{ userSelect: 'none' }}
+                                                            />
+                                                            {/* 框选区域 */}
+                                                            {cropArea && (
+                                                                <div
+                                                                    className="absolute border-2 border-primary bg-primary/20 pointer-events-none"
+                                                                    style={{
+                                                                        left: `${cropArea.x}px`,
+                                                                        top: `${cropArea.y}px`,
+                                                                        width: `${cropArea.width}px`,
+                                                                        height: `${cropArea.height}px`,
+                                                                    }}
+                                                                />
+                                                            )}
+                                                            {/* 当前选择的区域 */}
+                                                            {isSelectingArea && selectionStart && (
+                                                                <div
+                                                                    className="absolute border-2 border-dashed border-primary bg-primary/10 pointer-events-none"
+                                                                    style={{
+                                                                        left: `${Math.min(selectionStart.x, cropArea?.x || 0)}px`,
+                                                                        top: `${Math.min(selectionStart.y, cropArea?.y || 0)}px`,
+                                                                        width: `${Math.abs((cropArea?.x || 0) - selectionStart.x)}px`,
+                                                                        height: `${Math.abs((cropArea?.y || 0) - selectionStart.y)}px`,
+                                                                    }}
+                                                                />
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <div className="p-4 border-t flex justify-between items-center">
+                                                        <div className="text-sm text-muted-foreground">
+                                                            {cropArea ? (
+                                                                <span>已选择区域: {Math.round(cropArea.width)}×{Math.round(cropArea.height)}px</span>
+                                                            ) : (
+                                                                <span>将使用整张图片</span>
+                                                            )}
+                                                        </div>
+                                                        <div className="flex gap-2">
+                                                            <Button
+                                                                variant="outline"
+                                                                onClick={cancelScreenshot}
+                                                            >
+                                                                <X className="h-4 w-4 mr-1" />
+                                                                取消
+                                                            </Button>
+                                                            <Button
+                                                                onClick={confirmScreenshot}
+                                                            >
+                                                                <CheckCircle className="h-4 w-4 mr-1" />
+                                                                确认使用
+                                                            </Button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
                                         <div className="flex gap-2">
                                             <Button size="sm" onClick={saveAnswerHandler}>
                                                 <Save className="h-4 w-4 mr-1" />
@@ -993,7 +2016,56 @@ export default function ErrorDetailPage() {
                                         </div>
                                     </div>
                                 ) : (
-                                    <MarkdownRenderer content={item.answerText} className="font-semibold" />
+                                    <div className="space-y-4">
+                                        <div className="flex justify-between items-center pb-2 border-b">
+                                            <span className="text-sm text-muted-foreground">答题时间</span>
+                                            <span className="text-sm font-medium">
+                                                {item.answerTime ? (
+                                                    new Date(item.answerTime).toLocaleString('zh-CN', {
+                                                        year: 'numeric',
+                                                        month: '2-digit',
+                                                        day: '2-digit',
+                                                        hour: '2-digit',
+                                                        minute: '2-digit'
+                                                    })
+                                                ) : (
+                                                    <span className="text-muted-foreground italic">未设置</span>
+                                                )}
+                                            </span>
+                                        </div>
+                                        <MarkdownRenderer content={item.answerText} className="font-semibold" />
+                                        {item.answerImages && (
+                                            <div className="space-y-2">
+                                                <div className="text-sm font-medium">答案图片：</div>
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    {(() => {
+                                                        try {
+                                                            const images = JSON.parse(item.answerImages);
+                                                            return images.map((img: any, idx: number) => (
+                                                                <div key={idx} className="relative">
+                                                                    <img
+                                                                        src={img.dataUrl}
+                                                                        alt={img.name || `答案图片 ${idx + 1}`}
+                                                                        className="w-full rounded-lg border cursor-pointer hover:opacity-90 transition-opacity"
+                                                                        onClick={() => {
+                                                                            setCurrentImageUrl(img.dataUrl);
+                                                                            setIsImageViewerOpen(true);
+                                                                        }}
+                                                                        title="点击查看全图"
+                                                                    />
+                                                                    <p className="text-xs text-muted-foreground mt-1 text-center">
+                                                                        💡 点击查看全图
+                                                                    </p>
+                                                                </div>
+                                                            ));
+                                                        } catch (e) {
+                                                            return null;
+                                                        }
+                                                    })()}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
                                 )}
                             </CardContent>
                         </Card>
@@ -1017,13 +2089,127 @@ export default function ErrorDetailPage() {
                             <CardContent className="space-y-4">
                                 {isEditingAnalysis ? (
                                     <div className="space-y-3">
-                                        <Textarea
+                                        <RichTextEditorWithImage
                                             value={analysisInput}
-                                            onChange={(e) => setAnalysisInput(e.target.value)}
+                                            onChange={(text, images) => {
+                                                setAnalysisInput(text);
+                                                setAnalysisImages(images);
+                                            }}
                                             placeholder="Enter analysis..."
                                             rows={12}
-                                            className="w-full font-mono text-sm"
+                                            existingImages={analysisImages}
                                         />
+                                        {/* 屏幕截图按钮 */}
+                                        {isScreenshotSupported() && (
+                                            <div className="flex items-center justify-center pt-2">
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={handleAnalysisScreenshot}
+                                                    disabled={isAnalysisScreenshotting}
+                                                    className="flex items-center gap-2"
+                                                >
+                                                    {isAnalysisScreenshotting && !analysisScreenshotPreview ? (
+                                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                                    ) : (
+                                                        <Monitor className="h-4 w-4" />
+                                                    )}
+                                                    {(isAnalysisScreenshotting && !analysisScreenshotPreview) ? '选择中...' : '屏幕截图'}
+                                                </Button>
+                                            </div>
+                                        )}
+
+                                        {/* 屏幕截图预览界面 */}
+                                        {analysisScreenshotPreview && (
+                                            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                                                <div className="bg-background rounded-lg shadow-xl max-w-4xl w-full space-y-4">
+                                                    <div className="p-4 border-b">
+                                                        <div className="flex justify-between items-center">
+                                                            <div>
+                                                                <h3 className="text-lg font-semibold">确认屏幕截图</h3>
+                                                                <p className="text-sm text-muted-foreground">在图片上拖动鼠标框选要保留的区域，或直接使用整张图片</p>
+                                                            </div>
+                                                            {analysisCropArea && (
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="sm"
+                                                                    onClick={clearAnalysisCropArea}
+                                                                >
+                                                                    <X className="h-4 w-4 mr-1" />
+                                                                    清除框选
+                                                                </Button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <div className="p-4">
+                                                        <div
+                                                            className="relative inline-block w-full cursor-crosshair"
+                                                            onMouseDown={handleAnalysisStartSelection}
+                                                            onMouseMove={handleAnalysisUpdateSelection}
+                                                            onMouseUp={handleAnalysisEndSelection}
+                                                            onMouseLeave={handleAnalysisEndSelection}
+                                                        >
+                                                            <img
+                                                                ref={analysisPreviewImageRef}
+                                                                src={analysisScreenshotPreview}
+                                                                alt="屏幕截图预览"
+                                                                className="w-full rounded border"
+                                                                draggable={false}
+                                                                style={{ userSelect: 'none' }}
+                                                            />
+                                                            {/* 框选区域 */}
+                                                            {analysisCropArea && (
+                                                                <div
+                                                                    className="absolute border-2 border-primary bg-primary/20 pointer-events-none"
+                                                                    style={{
+                                                                        left: `${analysisCropArea.x}px`,
+                                                                        top: `${analysisCropArea.y}px`,
+                                                                        width: `${analysisCropArea.width}px`,
+                                                                        height: `${analysisCropArea.height}px`,
+                                                                    }}
+                                                                />
+                                                            )}
+                                                            {/* 当前选择的区域 */}
+                                                            {isAnalysisSelectingArea && analysisSelectionStart && (
+                                                                <div
+                                                                    className="absolute border-2 border-dashed border-primary bg-primary/10 pointer-events-none"
+                                                                    style={{
+                                                                        left: `${Math.min(analysisSelectionStart.x, analysisCropArea?.x || 0)}px`,
+                                                                        top: `${Math.min(analysisSelectionStart.y, analysisCropArea?.y || 0)}px`,
+                                                                        width: `${Math.abs((analysisCropArea?.x || 0) - analysisSelectionStart.x)}px`,
+                                                                        height: `${Math.abs((analysisCropArea?.y || 0) - analysisSelectionStart.y)}px`,
+                                                                    }}
+                                                                />
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <div className="p-4 border-t flex justify-between items-center">
+                                                        <div className="text-sm text-muted-foreground">
+                                                            {analysisCropArea ? (
+                                                                <span>已选择区域: {Math.round(analysisCropArea.width)}×{Math.round(analysisCropArea.height)}px</span>
+                                                            ) : (
+                                                                <span>将使用整张图片</span>
+                                                            )}
+                                                        </div>
+                                                        <div className="flex gap-2">
+                                                            <Button
+                                                                variant="outline"
+                                                                onClick={cleanupAnalysisScreenshot}
+                                                            >
+                                                                <X className="h-4 w-4 mr-1" />
+                                                                取消
+                                                            </Button>
+                                                            <Button
+                                                                onClick={confirmAnalysisScreenshot}
+                                                            >
+                                                                <CheckCircle className="h-4 w-4 mr-1" />
+                                                                确认使用
+                                                            </Button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
                                         <div className="flex gap-2">
                                             <Button size="sm" onClick={saveAnalysisHandler}>
                                                 <Save className="h-4 w-4 mr-1" />
@@ -1036,7 +2222,40 @@ export default function ErrorDetailPage() {
                                         </div>
                                     </div>
                                 ) : (
-                                    <MarkdownRenderer content={item.analysis} />
+                                    <div className="space-y-4">
+                                        <MarkdownRenderer content={item.analysis} />
+                                        {item.analysisImages && (
+                                            <div className="space-y-2">
+                                                <div className="text-sm font-medium">解析图片：</div>
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    {(() => {
+                                                        try {
+                                                            const images = JSON.parse(item.analysisImages);
+                                                            return images.map((img: any, idx: number) => (
+                                                                <div key={idx} className="relative">
+                                                                    <img
+                                                                        src={img.dataUrl}
+                                                                        alt={img.name || `解析图片 ${idx + 1}`}
+                                                                        className="w-full rounded-lg border cursor-pointer hover:opacity-90 transition-opacity"
+                                                                        onClick={() => {
+                                                                            setCurrentImageUrl(img.dataUrl);
+                                                                            setIsImageViewerOpen(true);
+                                                                        }}
+                                                                        title="点击查看全图"
+                                                                    />
+                                                                    <p className="text-xs text-muted-foreground mt-1 text-center">
+                                                                        💡 点击查看全图
+                                                                    </p>
+                                                                </div>
+                                                            ));
+                                                        } catch (e) {
+                                                            return null;
+                                                        }
+                                                    })()}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
                                 )}
                             </CardContent>
                         </Card>
@@ -1141,20 +2360,26 @@ export default function ErrorDetailPage() {
 
             {/* Image Viewer Modal */}
             {
-                isImageViewerOpen && item?.originalImageUrl && (
+                isImageViewerOpen && (currentImageUrl || item?.originalImageUrl) && (
                     <div
                         className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
-                        onClick={() => setIsImageViewerOpen(false)}
+                        onClick={() => {
+                            setIsImageViewerOpen(false);
+                            setCurrentImageUrl(null);
+                        }}
                     >
                         <div className="relative max-w-7xl max-h-full">
                             <button
                                 className="absolute -top-12 right-0 text-white hover:text-gray-300 text-lg font-semibold bg-black/50 px-4 py-2 rounded"
-                                onClick={() => setIsImageViewerOpen(false)}
+                                onClick={() => {
+                                    setIsImageViewerOpen(false);
+                                    setCurrentImageUrl(null);
+                                }}
                             >
                                 {t.detail?.close || '✕ Close'}
                             </button>
                             <img
-                                src={item.originalImageUrl}
+                                src={currentImageUrl || item?.originalImageUrl}
                                 alt="Full size"
                                 className="max-w-full max-h-[90vh] object-contain rounded-lg"
                                 onClick={(e) => e.stopPropagation()}

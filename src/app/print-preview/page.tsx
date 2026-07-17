@@ -26,6 +26,8 @@ function PrintPreviewContent() {
     const [showAnalysis, setShowAnalysis] = useState(false);
     const [showTags, setShowTags] = useState(false);
     const [imageScale, setImageScale] = useState(70);
+    const [answerImageScale, setAnswerImageScale] = useState(70);
+    const [analysisImageScale, setAnalysisImageScale] = useState(70);
     const [showQuestionText, setShowQuestionText] = useState(false);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [sortBy, setSortBy] = useState<string>("createdAt");
@@ -54,7 +56,18 @@ function PrintPreviewContent() {
             params.set("sortOrder", order);
             const response = await apiClient.get<PaginatedResponse<ErrorItem>>(`/api/error-items/list?${params.toString()}`);
             setItems(response.items);
-            setSelectedIds(new Set(response.items.map((item) => item.id)));
+
+            // 检查URL参数中是否有指定的selectedIds
+            const selectedIdsParam = searchParams.get("selectedIds");
+            if (selectedIdsParam) {
+                const ids = selectedIdsParam.split(",");
+                // 验证这些ID是否都在当前items中
+                const validIds = ids.filter(id => response.items.some(item => item.id === id));
+                setSelectedIds(new Set(validIds));
+            } else {
+                // 如果没有指定selectedIds，默认全选
+                setSelectedIds(new Set(response.items.map((item) => item.id)));
+            }
         } catch (error) {
             console.error(error);
         } finally {
@@ -73,7 +86,18 @@ function PrintPreviewContent() {
             params.set("sortOrder", sortOrder);
             const response = await apiClient.get<PaginatedResponse<ErrorItem>>(`/api/error-items/list?${params.toString()}`);
             setItems(response.items);
-            setSelectedIds(new Set(response.items.map((item) => item.id)));
+
+            // 检查URL参数中是否有指定的selectedIds
+            const selectedIdsParam = searchParams.get("selectedIds");
+            if (selectedIdsParam) {
+                const ids = selectedIdsParam.split(",");
+                // 验证这些ID是否都在当前items中
+                const validIds = ids.filter(id => response.items.some(item => item.id === id));
+                setSelectedIds(new Set(validIds));
+            } else {
+                // 如果没有指定selectedIds，默认全选
+                setSelectedIds(new Set(response.items.map((item) => item.id)));
+            }
         } catch (error) {
             console.error(error);
         } finally {
@@ -89,6 +113,12 @@ function PrintPreviewContent() {
     const reserveAnswerSpace = shouldReserveAnswerSpace(showAnswers, showAnalysis);
     const countLabel = getPrintPreviewCountLabel(items.length, selectedItems.length);
     const emptyState = getPrintPreviewEmptyState(items.length, selectedItems.length);
+
+    // 创建原始索引映射，用于显示正确的题目编号
+    const originalIndexMap = new Map<string, number>();
+    items.forEach((item, index) => {
+        originalIndexMap.set(item.id, index);
+    });
 
     const toggleSelectedItem = (id: string) => {
         setSelectedIds((prev) => {
@@ -157,6 +187,32 @@ function PrintPreviewContent() {
                                 max="100"
                                 value={imageScale}
                                 onChange={(e) => setImageScale(Number(e.target.value))}
+                                className="w-16 sm:w-20 accent-primary"
+                            />
+                        </div>
+
+                        {/* Answer Image Scale Control */}
+                        <div className="flex items-center gap-2 text-sm bg-muted/50 px-2 sm:px-3 py-1 rounded-md">
+                            <span className="whitespace-nowrap text-xs sm:text-sm">做题答案图片: {answerImageScale}%</span>
+                            <input
+                                type="range"
+                                min="30"
+                                max="100"
+                                value={answerImageScale}
+                                onChange={(e) => setAnswerImageScale(Number(e.target.value))}
+                                className="w-16 sm:w-20 accent-primary"
+                            />
+                        </div>
+
+                        {/* Analysis Image Scale Control */}
+                        <div className="flex items-center gap-2 text-sm bg-muted/50 px-2 sm:px-3 py-1 rounded-md">
+                            <span className="whitespace-nowrap text-xs sm:text-sm">解析图片: {analysisImageScale}%</span>
+                            <input
+                                type="range"
+                                min="30"
+                                max="100"
+                                value={analysisImageScale}
+                                onChange={(e) => setAnalysisImageScale(Number(e.target.value))}
                                 className="w-16 sm:w-20 accent-primary"
                             />
                         </div>
@@ -266,6 +322,10 @@ function PrintPreviewContent() {
                         }
                     }
 
+                    // 使用原始索引，而不是选中项的索引
+                    const originalIndex = originalIndexMap.get(item.id) ?? index;
+                    const questionNumber = originalIndex + 1;
+
                     return (
                         <div
                             key={item.id}
@@ -275,7 +335,7 @@ function PrintPreviewContent() {
                             {showQuestionHeader && (
                                 <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 leading-7">
                                     <span className="text-lg font-bold">
-                                        {t.printPreview?.questionNumber?.replace('{num}', String(index + 1)) || `Question ${index + 1}`}
+                                        {t.printPreview?.questionNumber?.replace('{num}', String(questionNumber)) || `Question ${questionNumber}`}
                                     </span>
                                     {item.subject && (
                                         <span className="text-sm text-muted-foreground">
@@ -316,33 +376,135 @@ function PrintPreviewContent() {
                                     <MarkdownRenderer content={item.questionText} />
                                 </div>
                             ) : (
-                                item.originalImageUrl && (
-                                    <div className="mb-4">
-                                        <img
-                                            src={item.originalImageUrl}
-                                            alt={t.detail?.originalProblem || 'Question Image'}
-                                            className="h-auto border rounded"
-                                            style={{ maxWidth: `${imageScale}%` }}
-                                        />
-                                    </div>
-                                )
+                                <>
+                                    {/* Question Images Array */}
+                                    {item.questionImages && (() => {
+                                        try {
+                                            const images = JSON.parse(item.questionImages);
+                                            if (Array.isArray(images) && images.length > 0) {
+                                                return (
+                                                    <div className="mb-4 grid grid-cols-2 gap-3">
+                                                        {images.map((img: any, idx: number) => (
+                                                            <div key={idx} className="break-inside-avoid" style={{ width: '100%' }}>
+                                                                <img
+                                                                    src={img.dataUrl}
+                                                                    alt={img.name || `题目图片 ${idx + 1}`}
+                                                                    className="h-auto rounded border"
+                                                                    style={{
+                                                                        width: `${imageScale}%`,
+                                                                        maxWidth: '100%',
+                                                                        height: 'auto',
+                                                                        display: 'block',
+                                                                        margin: '0 auto'
+                                                                    }}
+                                                                />
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                );
+                                            }
+                                        } catch (e) {
+                                            console.error("Failed to parse question images:", e);
+                                        }
+                                        return null;
+                                    })()}
+                                    {/* Fallback to Original Image */}
+                                    {(!item.questionImages || item.questionImages === 'null') && item.originalImageUrl && (
+                                        <div className="mb-4" style={{ width: '100%' }}>
+                                            <img
+                                                src={item.originalImageUrl}
+                                                alt={t.detail?.originalProblem || 'Question Image'}
+                                                className="h-auto border rounded"
+                                                style={{
+                                                    width: `${imageScale}%`,
+                                                    maxWidth: '100%',
+                                                    height: 'auto',
+                                                    display: 'block',
+                                                    margin: '0 auto'
+                                                }}
+                                            />
+                                        </div>
+                                    )}
+                                </>
                             )}
 
 
 
                             {/* Answer */}
-                            {showAnswers && item.answerText && (
+                            {showAnswers && (item.answerText || item.answerImages) && (
                                 <div className="mb-4">
-                                    <h3 className="font-semibold mb-2">{t.printPreview?.referenceAnswer || 'Reference Answer'}:</h3>
-                                    <MarkdownRenderer content={item.answerText} />
+                                    <h3 className="font-semibold mb-2">{t.printPreview?.referenceAnswer || '做题答案'}:</h3>
+                                    {item.answerText && <MarkdownRenderer content={item.answerText} />}
+                                    {/* Answer Images */}
+                                    {item.answerImages && (() => {
+                                        try {
+                                            const images = JSON.parse(item.answerImages);
+                                            if (Array.isArray(images) && images.length > 0) {
+                                                return (
+                                                    <div className="mt-4 grid grid-cols-2 gap-3">
+                                                        {images.map((img: any, idx: number) => (
+                                                            <div key={idx} className="break-inside-avoid" style={{ width: '100%' }}>
+                                                                <img
+                                                                    src={img.dataUrl}
+                                                                    alt={img.name || `答案图片 ${idx + 1}`}
+                                                                    className="h-auto rounded border"
+                                                                    style={{
+                                                                        width: `${answerImageScale}%`,
+                                                                        maxWidth: '100%',
+                                                                        height: 'auto',
+                                                                        display: 'block',
+                                                                        margin: '0 auto'
+                                                                    }}
+                                                                />
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                );
+                                            }
+                                        } catch (e) {
+                                            console.error("Failed to parse answer images:", e);
+                                        }
+                                        return null;
+                                    })()}
                                 </div>
                             )}
 
                             {/* Analysis */}
-                            {showAnalysis && item.analysis && (
+                            {showAnalysis && (item.analysis || item.analysisImages) && (
                                 <div className="mb-4">
                                     <h3 className="font-semibold mb-2">{t.printPreview?.analysis || 'Analysis'}:</h3>
-                                    <MarkdownRenderer content={item.analysis} />
+                                    {item.analysis && <MarkdownRenderer content={item.analysis} />}
+                                    {/* Analysis Images */}
+                                    {item.analysisImages && (() => {
+                                        try {
+                                            const images = JSON.parse(item.analysisImages);
+                                            if (Array.isArray(images) && images.length > 0) {
+                                                return (
+                                                    <div className={`mt-4 grid grid-cols-2 gap-3 ${!item.analysis ? '' : ''}`}>
+                                                        {images.map((img: any, idx: number) => (
+                                                            <div key={idx} className="break-inside-avoid" style={{ width: '100%' }}>
+                                                                <img
+                                                                    src={img.dataUrl}
+                                                                    alt={img.name || `解析图片 ${idx + 1}`}
+                                                                    className="h-auto rounded border"
+                                                                    style={{
+                                                                        width: `${analysisImageScale}%`,
+                                                                        maxWidth: '100%',
+                                                                        height: 'auto',
+                                                                        display: 'block',
+                                                                        margin: '0 auto'
+                                                                    }}
+                                                                />
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                );
+                                            }
+                                        } catch (e) {
+                                            console.error("Failed to parse analysis images:", e);
+                                        }
+                                        return null;
+                                    })()}
                                 </div>
                             )}
                         </div>

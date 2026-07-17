@@ -56,6 +56,8 @@ RUN apk add --no-cache su-exec openssl \
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/prisma ./node_modules/prisma
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modules/@prisma
+# Copy bcryptjs for admin seed script
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/bcryptjs ./node_modules/bcryptjs
 
 COPY --from=builder /app/public ./public
 
@@ -86,10 +88,11 @@ ENV PORT=3000
 # set hostname to localhost
 ENV HOSTNAME="0.0.0.0"
 
-# Environment variables 
+# Environment variables
 # Point to the persistent data location
 ENV DATABASE_URL="file:/app/data/dev.db"
 ENV AUTH_TRUST_HOST=true
+ENV NEXTAUTH_SECRET="H4cfwaLFWQQCzMnxoQxSb/zHKWpe4PaGxQEOa48FUd4="
 
 # Use entrypoint script to handle DB initialization
 ENTRYPOINT ["./docker-entrypoint.sh"]
