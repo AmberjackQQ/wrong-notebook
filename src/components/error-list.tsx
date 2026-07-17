@@ -86,6 +86,11 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
         if (chapterFilter) params.append("chapter", chapterFilter); // 章节筛选
         if (paperLevelFilter !== "all") params.append("paperLevel", paperLevelFilter);
 
+        // 如果是多选模式且有选中的题目，传递选中的题目ID
+        if (isSelectMode && selectedIds.size > 0) {
+            params.append("selectedIds", Array.from(selectedIds).join(","));
+        }
+
         router.push(`/print-preview?${params.toString()}`);
     };
 
@@ -318,7 +323,9 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
                 </DropdownMenu>
                 <Button variant="outline" onClick={handleExportPrint}>
                     <Printer className="mr-2 h-4 w-4" />
-                    {t.notebook?.exportPrint || "导出打印"}
+                    {isSelectMode && selectedIds.size > 0
+                        ? `导出打印 (${selectedIds.size})`
+                        : (t.notebook?.exportPrint || "导出打印")}
                 </Button>
                 <Button
                     variant="outline"
@@ -508,6 +515,16 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
                                             <Badge variant={item.mistakeStatus === "wrong_attempt" ? "default" : "secondary"} className="text-xs">
                                                 {getMistakeStatusLabel(item.mistakeStatus, language)}
                                             </Badge>
+                                            {(item.analysis || item.analysisImages) && (
+                                                <Badge variant="outline" className="text-xs bg-blue-50 border-blue-200 text-blue-700">
+                                                    解析
+                                                </Badge>
+                                            )}
+                                            {(item.answerText || item.answerImages) && (
+                                                <Badge variant="outline" className="text-xs bg-green-50 border-green-200 text-green-700">
+                                                    做题答案
+                                                </Badge>
+                                            )}
                                         </div>
                                         <div className="flex flex-wrap gap-2 mt-3">
                                             {(expandedTags.has(item.id) ? tags : tags.slice(0, 3)).map((tag: string) => (
@@ -537,6 +554,11 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
                                                     ) : (
                                                         <>{(t.notebooks?.expandTags || "+{count} more").replace("{count}", (tags.length - 3).toString())}</>
                                                     )}
+                                                </Badge>
+                                            )}
+                                            {item.paperLevel && (
+                                                <Badge variant="outline" className="text-xs bg-purple-50 border-purple-200 text-purple-700">
+                                                    {item.paperLevel}
                                                 </Badge>
                                             )}
                                         </div>
