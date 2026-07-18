@@ -144,9 +144,9 @@
     page-break-inside: avoid;
   }
 
-  /* Ensure images fit within page */
+  /* Ensure images fit within page - but allow larger scales for better printing */
   img {
-    max-width: 100%;
+    max-width: 200%; /* Allow images to be scaled up to 200% as set in print preview */
     page-break-inside: avoid;
   }
 

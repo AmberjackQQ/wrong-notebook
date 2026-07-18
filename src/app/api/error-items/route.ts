@@ -31,6 +31,8 @@ export async function POST(req: Request) {
             gradeSemester,
             paperLevel,
             geogebraCommands,
+            answerImages,
+            analysisImages,
         } = body;
 
         // 记录请求参数（不记录完整图片数据）
@@ -174,6 +176,8 @@ export async function POST(req: Request) {
                     gradeSemester: finalGradeSemester,
                     paperLevel: paperLevel,
                     geogebraCommands: geogebraCommands || null,
+                    answerImages: answerImages || null,
+                    analysisImages: analysisImages || null,
                     masteryLevel: 0,
                     tags: {
                         connect: tagConnections,

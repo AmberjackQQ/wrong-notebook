@@ -52,7 +52,7 @@ interface ErrorItemDetail {
     knowledgePoints: string; // 保留兼容旧数据
     tags: KnowledgeTag[]; // 新的标签关联
     masteryLevel: number;
-    originalImageUrl: string;
+    originalImageUrl: string | null; // 允许为null
     userNotes: string | null;
     subjectId?: string | null;
     subject?: {
@@ -1125,6 +1125,28 @@ export default function ErrorDetailPage() {
         }
     };
 
+    const handleDeleteOriginalImage = async () => {
+        if (!item) return;
+
+        try {
+            await apiClient.put(`/api/error-items/${item.id}`, {
+                originalImageUrl: null
+            });
+
+            if (item) {
+                setItem({
+                    ...item,
+                    originalImageUrl: null
+                });
+            }
+
+            alert('原始问题图片已删除');
+        } catch (error) {
+            console.error('删除原始图片失败:', error);
+            alert('删除失败，请稍后重试');
+        }
+    };
+
     const saveQuestionHandler = async () => {
         try {
             // 将空图片数组保存为空JSON数组，而不是null
@@ -1433,25 +1455,52 @@ export default function ErrorDetailPage() {
                             </CardHeader>
                             <CardContent className="space-y-4">
                                 {item.originalImageUrl && (
-                                    <div
-                                        className="cursor-pointer hover:opacity-90 transition-opacity"
-                                        onClick={() => {
-                                            setCurrentImageUrl(item.originalImageUrl);
-                                            setIsImageViewerOpen(true);
-                                        }}
-                                        title={t.detail?.clickToView || 'Click to view full image'}
-                                    >
+                                    <div className="relative">
                                         <p className="text-sm font-medium mb-2 text-muted-foreground">
                                             {t.detail.originalProblem || "Original Problem"}
                                         </p>
-                                        <img
-                                            src={item.originalImageUrl}
-                                            alt={t.detail.originalProblem || "Original Problem"}
-                                            className="w-full rounded-lg border hover:border-primary/50 transition-colors"
-                                        />
-                                        <p className="text-xs text-muted-foreground mt-1 text-center">
-                                            💡 {t.detail?.clickToEnlarge || 'Click to enlarge'}
-                                        </p>
+
+                                        {isEditingQuestion ? (
+                                            // 编辑模式：显示删除按钮
+                                            <div className="relative inline-block w-full">
+                                                <img
+                                                    src={item.originalImageUrl}
+                                                    alt={t.detail.originalProblem || "Original Problem"}
+                                                    className="w-full rounded-lg border"
+                                                />
+                                                <Button
+                                                    size="sm"
+                                                    variant="destructive"
+                                                    className="absolute top-2 right-2 h-8 w-8 p-0 shadow-lg rounded-full bg-red-600 hover:bg-red-700 text-white border-2 border-white"
+                                                    onClick={() => {
+                                                        if (confirm('确定要删除原始问题图片吗？')) {
+                                                            handleDeleteOriginalImage();
+                                                        }
+                                                    }}
+                                                >
+                                                    <X className="h-4 w-4" />
+                                                </Button>
+                                            </div>
+                                        ) : (
+                                            // 查看模式：可点击放大
+                                            <div
+                                                className="cursor-pointer hover:opacity-90 transition-opacity"
+                                                onClick={() => {
+                                                    setCurrentImageUrl(item.originalImageUrl);
+                                                    setIsImageViewerOpen(true);
+                                                }}
+                                                title={t.detail?.clickToView || 'Click to view full image'}
+                                            >
+                                                <img
+                                                    src={item.originalImageUrl}
+                                                    alt={t.detail.originalProblem || "Original Problem"}
+                                                    className="w-full rounded-lg border hover:border-primary/50 transition-colors"
+                                                />
+                                                <p className="text-xs text-muted-foreground mt-1 text-center">
+                                                    💡 {t.detail?.clickToEnlarge || 'Click to enlarge'}
+                                                </p>
+                                            </div>
+                                        )}
                                     </div>
                                 )}
 
@@ -1489,12 +1538,25 @@ export default function ErrorDetailPage() {
                                                         try {
                                                             const images = JSON.parse(item.questionImages);
                                                             return images.map((img: any, idx: number) => (
-                                                                <div key={idx} className="relative">
+                                                                <div
+                                                                    key={idx}
+                                                                    className="relative cursor-pointer hover:opacity-90 transition-opacity group"
+                                                                    onClick={() => {
+                                                                        setCurrentImageUrl(img.dataUrl);
+                                                                        setIsImageViewerOpen(true);
+                                                                    }}
+                                                                    title={t.detail?.clickToEnlarge || 'Click to enlarge'}
+                                                                >
                                                                     <img
                                                                         src={img.dataUrl}
                                                                         alt={img.name || `题目图片 ${idx + 1}`}
-                                                                        className="w-full rounded-lg border"
+                                                                        className="w-full rounded-lg border hover:border-primary/50 transition-colors"
                                                                     />
+                                                                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                                                                        <div className="bg-black/50 text-white px-3 py-1 rounded-full text-sm">
+                                                                            🔍 {t.detail?.clickToEnlarge || 'Click to enlarge'}
+                                                                        </div>
+                                                                    </div>
                                                                 </div>
                                                             ));
                                                         } catch (e) {
@@ -1893,117 +1955,6 @@ export default function ErrorDetailPage() {
                                             rows={5}
                                             existingImages={answerImages}
                                         />
-                                        {/* 屏幕截图按钮 */}
-                                        {isScreenshotSupported() && (
-                                            <div className="flex items-center justify-center pt-2">
-                                                <Button
-                                                    variant="outline"
-                                                    size="sm"
-                                                    onClick={handleScreenshot}
-                                                    disabled={isScreenshotting}
-                                                    className="flex items-center gap-2"
-                                                >
-                                                    {isScreenshotting && !screenshotPreview ? (
-                                                        <Loader2 className="h-4 w-4 animate-spin" />
-                                                    ) : (
-                                                        <Monitor className="h-4 w-4" />
-                                                    )}
-                                                    {(isScreenshotting && !screenshotPreview) ? '选择中...' : '屏幕截图'}
-                                                </Button>
-                                            </div>
-                                        )}
-
-                                        {/* 屏幕截图预览界面 */}
-                                        {screenshotPreview && (
-                                            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                                                <div className="bg-background rounded-lg shadow-xl max-w-4xl w-full space-y-4">
-                                                    <div className="p-4 border-b">
-                                                        <div className="flex justify-between items-center">
-                                                            <div>
-                                                                <h3 className="text-lg font-semibold">确认屏幕截图</h3>
-                                                                <p className="text-sm text-muted-foreground">在图片上拖动鼠标框选要保留的区域，或直接使用整张图片</p>
-                                                            </div>
-                                                            {cropArea && (
-                                                                <Button
-                                                                    variant="ghost"
-                                                                    size="sm"
-                                                                    onClick={clearCropArea}
-                                                                >
-                                                                    <X className="h-4 w-4 mr-1" />
-                                                                    清除框选
-                                                                </Button>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                    <div className="p-4">
-                                                        <div
-                                                            className="relative inline-block w-full cursor-crosshair"
-                                                            onMouseDown={handleStartSelection}
-                                                            onMouseMove={handleUpdateSelection}
-                                                            onMouseUp={handleEndSelection}
-                                                            onMouseLeave={handleEndSelection}
-                                                        >
-                                                            <img
-                                                                ref={previewImageRef}
-                                                                src={screenshotPreview}
-                                                                alt="屏幕截图预览"
-                                                                className="w-full rounded border"
-                                                                draggable={false}
-                                                                style={{ userSelect: 'none' }}
-                                                            />
-                                                            {/* 框选区域 */}
-                                                            {cropArea && (
-                                                                <div
-                                                                    className="absolute border-2 border-primary bg-primary/20 pointer-events-none"
-                                                                    style={{
-                                                                        left: `${cropArea.x}px`,
-                                                                        top: `${cropArea.y}px`,
-                                                                        width: `${cropArea.width}px`,
-                                                                        height: `${cropArea.height}px`,
-                                                                    }}
-                                                                />
-                                                            )}
-                                                            {/* 当前选择的区域 */}
-                                                            {isSelectingArea && selectionStart && (
-                                                                <div
-                                                                    className="absolute border-2 border-dashed border-primary bg-primary/10 pointer-events-none"
-                                                                    style={{
-                                                                        left: `${Math.min(selectionStart.x, cropArea?.x || 0)}px`,
-                                                                        top: `${Math.min(selectionStart.y, cropArea?.y || 0)}px`,
-                                                                        width: `${Math.abs((cropArea?.x || 0) - selectionStart.x)}px`,
-                                                                        height: `${Math.abs((cropArea?.y || 0) - selectionStart.y)}px`,
-                                                                    }}
-                                                                />
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                    <div className="p-4 border-t flex justify-between items-center">
-                                                        <div className="text-sm text-muted-foreground">
-                                                            {cropArea ? (
-                                                                <span>已选择区域: {Math.round(cropArea.width)}×{Math.round(cropArea.height)}px</span>
-                                                            ) : (
-                                                                <span>将使用整张图片</span>
-                                                            )}
-                                                        </div>
-                                                        <div className="flex gap-2">
-                                                            <Button
-                                                                variant="outline"
-                                                                onClick={cancelScreenshot}
-                                                            >
-                                                                <X className="h-4 w-4 mr-1" />
-                                                                取消
-                                                            </Button>
-                                                            <Button
-                                                                onClick={confirmScreenshot}
-                                                            >
-                                                                <CheckCircle className="h-4 w-4 mr-1" />
-                                                                确认使用
-                                                            </Button>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        )}
                                         <div className="flex gap-2">
                                             <Button size="sm" onClick={saveAnswerHandler}>
                                                 <Save className="h-4 w-4 mr-1" />
@@ -2099,117 +2050,7 @@ export default function ErrorDetailPage() {
                                             rows={12}
                                             existingImages={analysisImages}
                                         />
-                                        {/* 屏幕截图按钮 */}
-                                        {isScreenshotSupported() && (
-                                            <div className="flex items-center justify-center pt-2">
-                                                <Button
-                                                    variant="outline"
-                                                    size="sm"
-                                                    onClick={handleAnalysisScreenshot}
-                                                    disabled={isAnalysisScreenshotting}
-                                                    className="flex items-center gap-2"
-                                                >
-                                                    {isAnalysisScreenshotting && !analysisScreenshotPreview ? (
-                                                        <Loader2 className="h-4 w-4 animate-spin" />
-                                                    ) : (
-                                                        <Monitor className="h-4 w-4" />
-                                                    )}
-                                                    {(isAnalysisScreenshotting && !analysisScreenshotPreview) ? '选择中...' : '屏幕截图'}
-                                                </Button>
-                                            </div>
-                                        )}
 
-                                        {/* 屏幕截图预览界面 */}
-                                        {analysisScreenshotPreview && (
-                                            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                                                <div className="bg-background rounded-lg shadow-xl max-w-4xl w-full space-y-4">
-                                                    <div className="p-4 border-b">
-                                                        <div className="flex justify-between items-center">
-                                                            <div>
-                                                                <h3 className="text-lg font-semibold">确认屏幕截图</h3>
-                                                                <p className="text-sm text-muted-foreground">在图片上拖动鼠标框选要保留的区域，或直接使用整张图片</p>
-                                                            </div>
-                                                            {analysisCropArea && (
-                                                                <Button
-                                                                    variant="ghost"
-                                                                    size="sm"
-                                                                    onClick={clearAnalysisCropArea}
-                                                                >
-                                                                    <X className="h-4 w-4 mr-1" />
-                                                                    清除框选
-                                                                </Button>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                    <div className="p-4">
-                                                        <div
-                                                            className="relative inline-block w-full cursor-crosshair"
-                                                            onMouseDown={handleAnalysisStartSelection}
-                                                            onMouseMove={handleAnalysisUpdateSelection}
-                                                            onMouseUp={handleAnalysisEndSelection}
-                                                            onMouseLeave={handleAnalysisEndSelection}
-                                                        >
-                                                            <img
-                                                                ref={analysisPreviewImageRef}
-                                                                src={analysisScreenshotPreview}
-                                                                alt="屏幕截图预览"
-                                                                className="w-full rounded border"
-                                                                draggable={false}
-                                                                style={{ userSelect: 'none' }}
-                                                            />
-                                                            {/* 框选区域 */}
-                                                            {analysisCropArea && (
-                                                                <div
-                                                                    className="absolute border-2 border-primary bg-primary/20 pointer-events-none"
-                                                                    style={{
-                                                                        left: `${analysisCropArea.x}px`,
-                                                                        top: `${analysisCropArea.y}px`,
-                                                                        width: `${analysisCropArea.width}px`,
-                                                                        height: `${analysisCropArea.height}px`,
-                                                                    }}
-                                                                />
-                                                            )}
-                                                            {/* 当前选择的区域 */}
-                                                            {isAnalysisSelectingArea && analysisSelectionStart && (
-                                                                <div
-                                                                    className="absolute border-2 border-dashed border-primary bg-primary/10 pointer-events-none"
-                                                                    style={{
-                                                                        left: `${Math.min(analysisSelectionStart.x, analysisCropArea?.x || 0)}px`,
-                                                                        top: `${Math.min(analysisSelectionStart.y, analysisCropArea?.y || 0)}px`,
-                                                                        width: `${Math.abs((analysisCropArea?.x || 0) - analysisSelectionStart.x)}px`,
-                                                                        height: `${Math.abs((analysisCropArea?.y || 0) - analysisSelectionStart.y)}px`,
-                                                                    }}
-                                                                />
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                    <div className="p-4 border-t flex justify-between items-center">
-                                                        <div className="text-sm text-muted-foreground">
-                                                            {analysisCropArea ? (
-                                                                <span>已选择区域: {Math.round(analysisCropArea.width)}×{Math.round(analysisCropArea.height)}px</span>
-                                                            ) : (
-                                                                <span>将使用整张图片</span>
-                                                            )}
-                                                        </div>
-                                                        <div className="flex gap-2">
-                                                            <Button
-                                                                variant="outline"
-                                                                onClick={cleanupAnalysisScreenshot}
-                                                            >
-                                                                <X className="h-4 w-4 mr-1" />
-                                                                取消
-                                                            </Button>
-                                                            <Button
-                                                                onClick={confirmAnalysisScreenshot}
-                                                            >
-                                                                <CheckCircle className="h-4 w-4 mr-1" />
-                                                                确认使用
-                                                            </Button>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        )}
                                         <div className="flex gap-2">
                                             <Button size="sm" onClick={saveAnalysisHandler}>
                                                 <Save className="h-4 w-4 mr-1" />
@@ -2379,7 +2220,7 @@ export default function ErrorDetailPage() {
                                 {t.detail?.close || '✕ Close'}
                             </button>
                             <img
-                                src={currentImageUrl || item?.originalImageUrl}
+                                src={currentImageUrl || item?.originalImageUrl || ''}
                                 alt="Full size"
                                 className="max-w-full max-h-[90vh] object-contain rounded-lg"
                                 onClick={(e) => e.stopPropagation()}

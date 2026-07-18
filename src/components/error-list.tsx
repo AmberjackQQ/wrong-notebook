@@ -37,7 +37,7 @@ interface ErrorListProps {
 type KnowledgeFilterChange = {
     gradeSemester?: string;
     chapter?: string;
-    tag?: string | null;
+    tags?: string[];
 };
 
 export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
@@ -49,7 +49,7 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
     const [gradeFilter, setGradeFilter] = useState("");
     const [chapterFilter, setChapterFilter] = useState("");
     const [paperLevelFilter, setPaperLevelFilter] = useState<string>("all");
-    const [selectedTag, setSelectedTag] = useState<string | null>(null);
+    const [selectedTags, setSelectedTags] = useState<string[]>([]);
     const [expandedTags, setExpandedTags] = useState<Set<string>>(new Set());
     // 分页状态
     const [page, setPage] = useState(1);
@@ -79,8 +79,8 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
         if (timeFilter !== "all") {
             params.append("timeRange", timeFilter);
         }
-        if (selectedTag) {
-            params.append("tag", selectedTag);
+        if (selectedTags.length > 0) {
+            params.append("tags", selectedTags.join(","));
         }
         if (gradeFilter) params.append("gradeSemester", gradeFilter);
         if (chapterFilter) params.append("chapter", chapterFilter); // 章节筛选
@@ -95,24 +95,58 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
     };
 
     const handleTagClick = (tag: string) => {
-        setSelectedTag(selectedTag === tag ? null : tag);
+        setSelectedTags(prev => {
+            if (prev.includes(tag)) {
+                return prev.filter(t => t !== tag);
+            } else {
+                return [...prev, tag];
+            }
+        });
     };
 
-    const handleFilterChange = ({ gradeSemester, chapter, tag }: KnowledgeFilterChange) => {
+    // 从当前页面的题目中提取所有唯一的标签
+    const extractUniqueTags = (items: ErrorItem[]): string[] => {
+        const tagSet = new Set<string>();
+        items.forEach(item => {
+            // 从 tags 关联中提取
+            if (item.tags && Array.isArray(item.tags)) {
+                item.tags.forEach(tag => tagSet.add(tag.name));
+            }
+            // 从 knowledgePoints 字段中提取（兼容旧数据）
+            if (item.knowledgePoints) {
+                try {
+                    const parsed = JSON.parse(item.knowledgePoints);
+                    if (Array.isArray(parsed)) {
+                        parsed.forEach(tag => typeof tag === 'string' && tagSet.add(tag));
+                    }
+                } catch (e) {
+                    // 忽略解析错误
+                }
+            }
+        });
+        return Array.from(tagSet).sort();
+    };
+
+    // 全选/取消全选标签
+    const handleSelectAllTags = () => {
+        const allTags = extractUniqueTags(items);
+        if (selectedTags.length === allTags.length) {
+            setSelectedTags([]);
+        } else {
+            setSelectedTags(allTags);
+        }
+    };
+
+    const handleFilterChange = ({ gradeSemester, chapter, tags }: KnowledgeFilterChange) => {
         if (gradeSemester !== undefined) setGradeFilter(gradeSemester);
         if (chapter !== undefined) setChapterFilter(chapter);
-        // 注意：tag 可能是 undefined（表示清除），需要用 'tag' in obj 来判断是否传入了该参数
-        // 但由于我们的结构是直接解构，这里改用 null 作为清除标识
-        // 实际上 KnowledgeFilter 传入的是 { tag: undefined }，所以 tag 参数确实会被设置
-        // 问题在于 !== undefined 不能区分"未传入"和"传入undefined"
-        // 正确的做法是检查参数对象中是否有该 key
-        setSelectedTag(tag === undefined ? null : tag);
+        if (tags !== undefined) setSelectedTags(tags);
 
         // Clear dependent filters and reset page
         if (!gradeSemester) {
             setGradeFilter("");
             setChapterFilter("");
-            setSelectedTag(null);
+            setSelectedTags([]);
         } else if (!chapter) {
             setChapterFilter("");
         }
@@ -195,7 +229,7 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
     };
 
     // 追踪筛选条件是否变化（用于判断是否需要重置页码）
-    const prevFiltersRef = useRef({ search, masteryFilter, timeFilter, selectedTag, subjectId, gradeFilter, chapterFilter, paperLevelFilter, sortBy, sortOrder });
+    const prevFiltersRef = useRef({ search, masteryFilter, timeFilter, selectedTags, subjectId, gradeFilter, chapterFilter, paperLevelFilter, sortBy, sortOrder });
 
     // 获取自定义题目来源
     useEffect(() => {
@@ -218,7 +252,7 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
             prevFilters.search !== search ||
             prevFilters.masteryFilter !== masteryFilter ||
             prevFilters.timeFilter !== timeFilter ||
-            prevFilters.selectedTag !== selectedTag ||
+            prevFilters.selectedTags !== selectedTags ||
             prevFilters.subjectId !== subjectId ||
             prevFilters.gradeFilter !== gradeFilter ||
             prevFilters.chapterFilter !== chapterFilter ||
@@ -227,7 +261,7 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
             prevFilters.sortOrder !== sortOrder;
 
         // 更新 ref
-        prevFiltersRef.current = { search, masteryFilter, timeFilter, selectedTag, subjectId, gradeFilter, chapterFilter, paperLevelFilter, sortBy, sortOrder };
+        prevFiltersRef.current = { search, masteryFilter, timeFilter, selectedTags, subjectId, gradeFilter, chapterFilter, paperLevelFilter, sortBy, sortOrder };
 
         if (filtersChanged && page !== 1) {
             // 筛选条件变化且不在第一页，重置到第一页（会再次触发此 effect）
@@ -237,7 +271,7 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
 
         // 正常请求数据
         fetchItems();
-    }, [page, search, masteryFilter, timeFilter, selectedTag, subjectId, gradeFilter, chapterFilter, paperLevelFilter, sortBy, sortOrder]);
+    }, [page, search, masteryFilter, timeFilter, selectedTags, subjectId, gradeFilter, chapterFilter, paperLevelFilter, sortBy, sortOrder]);
 
     const fetchItems = async () => {
         setLoading(true);
@@ -251,8 +285,8 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
             if (timeFilter !== "all") {
                 params.append("timeRange", timeFilter);
             }
-            if (selectedTag) {
-                params.append("tag", selectedTag);
+            if (selectedTags.length > 0) {
+                params.append("tags", selectedTags.join(","));
             }
             if (gradeFilter) params.append("gradeSemester", gradeFilter);
             if (chapterFilter) params.append("chapter", chapterFilter); // 章节筛选
@@ -349,9 +383,10 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
                 <div className="w-full sm:w-auto">
                     <KnowledgeFilter
                         gradeSemester={gradeFilter}
-                        tag={selectedTag}
+                        tags={selectedTags}
                         onFilterChange={handleFilterChange}
                         subjectName={subjectName}
+                        availableTags={extractUniqueTags(items)}
                     />
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -423,15 +458,27 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
                 </div>
             </div>
 
-            {selectedTag && (
+            {selectedTags.length > 0 && (
                 <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
                     <span className="text-sm text-muted-foreground">
-                        {t.filter.filteringByTag || "Filtering by tag"}:
+                        {t.filter.filteringByTag || "Filtering by tags"}:
                     </span>
-                    <Badge variant="secondary" className="cursor-pointer" onClick={() => setSelectedTag(null)}>
-                        {selectedTag}
-                        <span className="ml-1 text-xs">×</span>
-                    </Badge>
+                    <div className="flex flex-wrap gap-1">
+                        {selectedTags.map(tag => (
+                            <Badge key={tag} variant="secondary" className="cursor-pointer" onClick={() => handleTagClick(tag)}>
+                                {tag}
+                                <span className="ml-1 text-xs">×</span>
+                            </Badge>
+                        ))}
+                    </div>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2 text-xs"
+                        onClick={() => setSelectedTags([])}
+                    >
+                        {t.filter.clear || "Clear"}
+                    </Button>
                 </div>
             )}
 
@@ -512,7 +559,10 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
                                             })()}
                                         </div>
                                         <div className="flex flex-wrap gap-2 mt-3">
-                                            <Badge variant={item.mistakeStatus === "wrong_attempt" ? "default" : "secondary"} className="text-xs">
+                                            <Badge
+                                                variant={item.mistakeStatus === "focus" ? "default" : item.mistakeStatus === "wrong_attempt" ? "default" : "secondary"}
+                                                className={item.mistakeStatus === "focus" ? "text-xs bg-red-100 border-red-300 text-red-800" : "text-xs"}
+                                            >
                                                 {getMistakeStatusLabel(item.mistakeStatus, language)}
                                             </Badge>
                                             {(item.analysis || item.analysisImages) && (
@@ -530,7 +580,7 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
                                             {(expandedTags.has(item.id) ? tags : tags.slice(0, 3)).map((tag: string) => (
                                                 <Badge
                                                     key={tag}
-                                                    variant={selectedTag === tag ? "default" : "outline"}
+                                                    variant={selectedTags.includes(tag) ? "default" : "outline"}
                                                     className="text-xs cursor-pointer hover:bg-primary/10 transition-colors"
                                                     onClick={(e) => {
                                                         e.preventDefault();

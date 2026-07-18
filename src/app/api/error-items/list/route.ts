@@ -103,20 +103,35 @@ export async function GET(req: Request) {
         }
 
         // Tag filter (第三级筛选：具体知识点)
-        if (tag && !chapter) {
-            // 只有在没有 chapter 筛选时才按 tag 过滤
-            // 因为 chapter 筛选已经更精确了
-            whereClause.knowledgePoints = {
-                contains: tag,
-            };
-        } else if (tag && chapter) {
-            // 如果同时有 chapter 和 tag，优先用 tag 进一步过滤
+        const tags = searchParams.get("tags");
+        if (tags && !chapter) {
+            // 支持多选标签：逗号分隔的标签列表
+            const tagList = tags.split(",").filter(t => t.trim());
+
+            if (tagList.length > 0) {
+                // 使用 OR 条件：只要匹配任意一个标签即可
+                whereClause.tags = {
+                    some: {
+                        name: {
+                            in: tagList
+                        }
+                    }
+                };
+            }
+        } else if (tags && chapter) {
+            // 如果同时有 chapter 和 tags，优先用 tags 进一步过滤
             // 覆盖 chapter 的条件
-            whereClause.tags = {
-                some: {
-                    name: tag
-                }
-            };
+            const tagList = tags.split(",").filter(t => t.trim());
+
+            if (tagList.length > 0) {
+                whereClause.tags = {
+                    some: {
+                        name: {
+                            in: tagList
+                        }
+                    }
+                };
+            }
         }
 
         // Grade/Semester filter

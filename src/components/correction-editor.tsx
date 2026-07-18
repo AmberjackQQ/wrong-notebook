@@ -23,12 +23,15 @@ import type { ReanswerQuestionResult } from "@/lib/ai/types";
 import { buildReanswerRequestBody } from "@/lib/reanswer-request";
 import { GeogebraDemo } from "@/components/geogebra-demo";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { RichTextEditorWithImage } from "@/components/rich-text-editor-with-image";
 
 interface ParsedQuestionWithSubject extends ParsedQuestion {
     subjectId?: string;
     gradeSemester?: string;
     paperLevel?: string;
     geogebraCommands?: string;
+    answerImages?: string; // JSON string of answer images
+    analysisImages?: string; // JSON string of analysis images
 }
 
 interface CorrectionEditorProps {
@@ -65,6 +68,10 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
     const [newSourceName, setNewSourceName] = useState("");
     const [isAddingSource, setIsAddingSource] = useState(false);
     const [sourcePopoverOpen, setSourcePopoverOpen] = useState(false);
+
+    // 图片状态管理
+    const [answerImages, setAnswerImages] = useState<Array<{ id: string; dataUrl: string; name: string }>>([]);
+    const [analysisImages, setAnalysisImages] = useState<Array<{ id: string; dataUrl: string; name: string }>>([]);
 
     const [educationStage, setEducationStage] = useState<string | undefined>(undefined);
     const [notebooks, setNotebooks] = useState<Notebook[]>([]);
@@ -284,8 +291,14 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
                             if (isSaving) return; // 防止重复点击
                             setIsSaving(true);
                             try {
+                                // 将图片数组转换为JSON字符串
+                                const answerImagesJson = answerImages.length > 0 ? JSON.stringify(answerImages) : '[]';
+                                const analysisImagesJson = analysisImages.length > 0 ? JSON.stringify(analysisImages) : '[]';
+
                                 await onSave({
                                     ...data,
+                                    answerImages: answerImagesJson,
+                                    analysisImages: analysisImagesJson,
                                     mistakeStatus: normalizeMistakeStatusForSave(
                                         data.mistakeStatus,
                                         data.wrongAnswerText
@@ -484,21 +497,29 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
 
                     <div className="space-y-2">
                         <Label>{t.editor.answer}</Label>
-                        <Textarea
+                        <RichTextEditorWithImage
                             value={data.answerText}
-                            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setData({ ...data, answerText: e.target.value })}
-                            className="min-h-[100px] font-mono text-sm"
+                            onChange={(text, images) => {
+                                setData({ ...data, answerText: text });
+                                setAnswerImages(images);
+                            }}
                             placeholder={t.editor.placeholder || "Supports Markdown and LaTeX..."}
+                            rows={4}
+                            existingImages={answerImages}
                         />
                     </div>
 
                     <div className="space-y-2">
                         <Label>{t.editor.analysis}</Label>
-                        <Textarea
+                        <RichTextEditorWithImage
                             value={data.analysis}
-                            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setData({ ...data, analysis: e.target.value })}
-                            className="min-h-[200px] font-mono text-sm"
+                            onChange={(text, images) => {
+                                setData({ ...data, analysis: text });
+                                setAnalysisImages(images);
+                            }}
                             placeholder={t.editor.placeholder || "Supports Markdown and LaTeX..."}
+                            rows={8}
+                            existingImages={analysisImages}
                         />
                     </div>
 
@@ -520,6 +541,7 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
                                         <SelectItem value="not_attempted">{t.editor.mistakeStatuses?.notAttempted || "不会做"}</SelectItem>
                                         <SelectItem value="wrong_attempt">{t.editor.mistakeStatuses?.wrongAttempt || "做错了"}</SelectItem>
                                         <SelectItem value="unknown">{t.editor.mistakeStatuses?.unknown || "未判断"}</SelectItem>
+                                        <SelectItem value="focus">{t.editor.mistakeStatuses?.focus || "重点关注"}</SelectItem>
                                     </SelectContent>
                                 </Select>
                             </div>
@@ -605,8 +627,24 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
                         <CardHeader>
                             <CardTitle>{t.editor.preview?.answer || "Answer Preview"}</CardTitle>
                         </CardHeader>
-                        <CardContent>
+                        <CardContent className="space-y-4">
                             <MarkdownRenderer content={data.answerText} />
+                            {answerImages.length > 0 && (
+                                <div className="grid grid-cols-2 gap-3">
+                                    {answerImages.map((image, idx) => (
+                                        <div key={image.id} className="relative border rounded-lg p-2">
+                                            <img
+                                                src={image.dataUrl}
+                                                alt={image.name || `答案图片 ${idx + 1}`}
+                                                className="w-full h-32 object-cover rounded"
+                                            />
+                                            <div className="text-xs text-muted-foreground mt-1 truncate">
+                                                {image.name}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </CardContent>
                     </Card>
 
@@ -614,8 +652,24 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
                         <CardHeader>
                             <CardTitle>{t.editor.preview?.analysis || "Analysis Preview"}</CardTitle>
                         </CardHeader>
-                        <CardContent>
+                        <CardContent className="space-y-4">
                             <MarkdownRenderer content={data.analysis} />
+                            {analysisImages.length > 0 && (
+                                <div className="grid grid-cols-2 gap-3">
+                                    {analysisImages.map((image, idx) => (
+                                        <div key={image.id} className="relative border rounded-lg p-2">
+                                            <img
+                                                src={image.dataUrl}
+                                                alt={image.name || `解析图片 ${idx + 1}`}
+                                                className="w-full h-32 object-cover rounded"
+                                            />
+                                            <div className="text-xs text-muted-foreground mt-1 truncate">
+                                                {image.name}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </CardContent>
                     </Card>
 
@@ -630,7 +684,9 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
                                     ? (t.editor.mistakeStatuses?.wrongAttempt || "做错了")
                                     : data.mistakeStatus === 'not_attempted'
                                         ? (t.editor.mistakeStatuses?.notAttempted || "不会做")
-                                        : (t.editor.mistakeStatuses?.unknown || "未判断")}
+                                        : data.mistakeStatus === 'focus'
+                                            ? (t.editor.mistakeStatuses?.focus || "重点关注")
+                                            : (t.editor.mistakeStatuses?.unknown || "未判断")}
                             </div>
                             {data.wrongAnswerText && (
                                 <div>

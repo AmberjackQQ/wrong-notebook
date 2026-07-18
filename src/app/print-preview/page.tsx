@@ -15,7 +15,7 @@ import {
     getSelectedPrintItems,
     shouldReserveAnswerSpace,
 } from "@/lib/print-preview";
-import { ArrowUpDown } from "lucide-react";
+import { ArrowUpDown, ChevronDown, ChevronUp } from "lucide-react";
 
 function PrintPreviewContent() {
     const searchParams = useSearchParams();
@@ -33,6 +33,7 @@ function PrintPreviewContent() {
     const [sortBy, setSortBy] = useState<string>("createdAt");
     const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
     const [showQuestionHeader, setShowQuestionHeader] = useState(true);
+    const [isSelectionBoxCollapsed, setIsSelectionBoxCollapsed] = useState(false);
 
     useEffect(() => {
         fetchItems();
@@ -184,7 +185,7 @@ function PrintPreviewContent() {
                             <input
                                 type="range"
                                 min="30"
-                                max="100"
+                                max="200"
                                 value={imageScale}
                                 onChange={(e) => setImageScale(Number(e.target.value))}
                                 className="w-16 sm:w-20 accent-primary"
@@ -197,7 +198,7 @@ function PrintPreviewContent() {
                             <input
                                 type="range"
                                 min="30"
-                                max="100"
+                                max="200"
                                 value={answerImageScale}
                                 onChange={(e) => setAnswerImageScale(Number(e.target.value))}
                                 className="w-16 sm:w-20 accent-primary"
@@ -210,7 +211,7 @@ function PrintPreviewContent() {
                             <input
                                 type="range"
                                 min="30"
-                                max="100"
+                                max="200"
                                 value={analysisImageScale}
                                 onChange={(e) => setAnalysisImageScale(Number(e.target.value))}
                                 className="w-16 sm:w-20 accent-primary"
@@ -269,11 +270,21 @@ function PrintPreviewContent() {
 
                     {/* Item Selection Row */}
                     <div className="rounded-md border bg-muted/20 p-3 space-y-2">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div className="text-sm font-medium">
-                                {t.printPreview?.selectItems || 'Select Items'} ({selectedItems.length}/{items.length})
+                        <div
+                            className="flex flex-wrap items-center justify-between gap-2 cursor-pointer"
+                            onClick={() => setIsSelectionBoxCollapsed(!isSelectionBoxCollapsed)}
+                        >
+                            <div className="flex items-center gap-2">
+                                <div className="text-sm font-medium">
+                                    {t.printPreview?.selectItems || 'Select Items'} ({selectedItems.length}/{items.length})
+                                </div>
+                                {isSelectionBoxCollapsed ? (
+                                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                                ) : (
+                                    <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                                )}
                             </div>
-                            <div className="flex gap-2">
+                            <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
                                 <Button variant="outline" size="sm" onClick={selectAllItems}>
                                     {t.printPreview?.selectAll || 'Select All'}
                                 </Button>
@@ -282,27 +293,29 @@ function PrintPreviewContent() {
                                 </Button>
                             </div>
                         </div>
-                        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 max-h-44 overflow-y-auto pr-1">
-                            {items.map((item, index) => (
-                                <label
-                                    key={item.id}
-                                    className="flex items-start gap-2 rounded border bg-background p-2 text-xs cursor-pointer hover:border-primary/50"
-                                >
-                                    <input
-                                        type="checkbox"
-                                        checked={selectedIds.has(item.id)}
-                                        onChange={() => toggleSelectedItem(item.id)}
-                                        className="mt-0.5 rounded border-gray-300 text-primary focus:ring-primary"
-                                    />
-                                    <span className="line-clamp-2">
-                                        <span className="font-semibold">
-                                            {t.printPreview?.questionNumber?.replace('{num}', String(index + 1)) || `Question ${index + 1}`}
+                        {!isSelectionBoxCollapsed && (
+                            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 max-h-44 overflow-y-auto pr-1">
+                                {items.map((item, index) => (
+                                    <label
+                                        key={item.id}
+                                        className="flex items-start gap-2 rounded border bg-background p-2 text-xs cursor-pointer hover:border-primary/50"
+                                    >
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedIds.has(item.id)}
+                                            onChange={() => toggleSelectedItem(item.id)}
+                                            className="mt-0.5 rounded border-gray-300 text-primary focus:ring-primary"
+                                        />
+                                        <span className="line-clamp-2">
+                                            <span className="font-semibold">
+                                                {t.printPreview?.questionNumber?.replace('{num}', String(index + 1)) || `Question ${index + 1}`}
+                                            </span>
+                                            {item.questionText ? `：${item.questionText}` : ''}
                                         </span>
-                                        {item.questionText ? `：${item.questionText}` : ''}
-                                    </span>
-                                </label>
-                            ))}
-                        </div>
+                                    </label>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
@@ -392,7 +405,7 @@ function PrintPreviewContent() {
                                                                     className="h-auto rounded border"
                                                                     style={{
                                                                         width: `${imageScale}%`,
-                                                                        maxWidth: '100%',
+                                                                        maxWidth: 'none', /* Allow scaling beyond container for print */
                                                                         height: 'auto',
                                                                         display: 'block',
                                                                         margin: '0 auto'
@@ -417,7 +430,7 @@ function PrintPreviewContent() {
                                                 className="h-auto border rounded"
                                                 style={{
                                                     width: `${imageScale}%`,
-                                                    maxWidth: '100%',
+                                                    maxWidth: 'none', /* Allow scaling beyond container for print */
                                                     height: 'auto',
                                                     display: 'block',
                                                     margin: '0 auto'
@@ -450,7 +463,7 @@ function PrintPreviewContent() {
                                                                     className="h-auto rounded border"
                                                                     style={{
                                                                         width: `${answerImageScale}%`,
-                                                                        maxWidth: '100%',
+                                                                        maxWidth: 'none', /* Allow scaling beyond container for print */
                                                                         height: 'auto',
                                                                         display: 'block',
                                                                         margin: '0 auto'
@@ -489,7 +502,7 @@ function PrintPreviewContent() {
                                                                     className="h-auto rounded border"
                                                                     style={{
                                                                         width: `${analysisImageScale}%`,
-                                                                        maxWidth: '100%',
+                                                                        maxWidth: 'none', /* Allow scaling beyond container for print */
                                                                         height: 'auto',
                                                                         display: 'block',
                                                                         margin: '0 auto'

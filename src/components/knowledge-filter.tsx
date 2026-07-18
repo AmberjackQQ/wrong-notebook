@@ -10,6 +10,14 @@ import {
 } from "@/components/ui/select";
 import { apiClient } from "@/lib/api-client";
 import { inferSubjectFromName } from "@/lib/knowledge-tags";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Check, X, ChevronDown } from "lucide-react";
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from "@/components/ui/popover";
 
 interface TagTreeNode {
     id: string;
@@ -21,12 +29,13 @@ interface TagTreeNode {
 
 interface KnowledgeFilterProps {
     gradeSemester?: string;
-    tag?: string | null;
+    tags?: string[];
     subjectName?: string;
+    availableTags?: string[];
     onFilterChange: (filters: {
         gradeSemester?: string;
         chapter?: string;
-        tag?: string;
+        tags?: string[];
     }) => void;
     className?: string;
 }
@@ -57,14 +66,16 @@ const GRADE_TO_SEMESTERS: Record<number, string[]> = {
 
 export function KnowledgeFilter({
     gradeSemester: initialGrade,
-    tag: initialTag,
+    tags: initialTags,
     subjectName,
+    availableTags,
     onFilterChange,
     className
 }: KnowledgeFilterProps) {
     const [gradeSemester, setGradeSemester] = useState<string>(initialGrade || "");
     const [chapter, setChapter] = useState<string>("");
-    const [tag, setTag] = useState<string>(initialTag || "");
+    const [selectedTags, setSelectedTags] = useState<string[]>(initialTags || []);
+    const [isTagDropdownOpen, setIsTagDropdownOpen] = useState(false);
 
     // 从数据库加载的标签树
     const [tagTree, setTagTree] = useState<TagTreeNode[]>([]);
@@ -82,8 +93,8 @@ export function KnowledgeFilter({
     }, [initialGrade]);
 
     useEffect(() => {
-        if (initialTag !== undefined) setTag(initialTag || "");
-    }, [initialTag]);
+        if (initialTags !== undefined) setSelectedTags(initialTags);
+    }, [initialTags]);
 
     // 计算用户当前年级 (返回原始年级数值，不进行范围截断，以便判断由初升高等情况)
     const calculateCurrentGrade = useCallback((educationStage: string, enrollmentYear: number): number => {
@@ -189,30 +200,53 @@ export function KnowledgeFilter({
     const handleGradeChange = (val: string) => {
         setGradeSemester(val);
         setChapter("");
-        setTag("");
+        setSelectedTags([]);
         onFilterChange({
             gradeSemester: val === "all" ? undefined : val,
             chapter: undefined,
-            tag: undefined
+            tags: []
         });
     };
 
     const handleChapterChange = (val: string) => {
         setChapter(val);
-        setTag("");
+        setSelectedTags([]);
         onFilterChange({
             gradeSemester: gradeSemester === "all" ? undefined : gradeSemester,
             chapter: val === "all" ? undefined : val,
-            tag: undefined
+            tags: []
         });
     };
 
-    const handleTagChange = (val: string) => {
-        setTag(val);
+    const handleTagToggle = (tag: string) => {
+        const newTags = selectedTags.includes(tag)
+            ? selectedTags.filter(t => t !== tag)
+            : [...selectedTags, tag];
+        setSelectedTags(newTags);
         onFilterChange({
             gradeSemester: gradeSemester === "all" ? undefined : gradeSemester,
             chapter: chapter === "all" ? undefined : chapter,
-            tag: val === "all" ? undefined : val
+            tags: newTags
+        });
+    };
+
+    const handleSelectAllTags = () => {
+        const allTags = displayTags;
+        const newTags = selectedTags.length === allTags.length ? [] : allTags;
+        setSelectedTags(newTags);
+        onFilterChange({
+            gradeSemester: gradeSemester === "all" ? undefined : gradeSemester,
+            chapter: chapter === "all" ? undefined : chapter,
+            tags: newTags
+        });
+    };
+
+    const handleClearTags = () => {
+        setSelectedTags([]);
+        onFilterChange({
+            gradeSemester: gradeSemester === "all" ? undefined : gradeSemester,
+            chapter: chapter === "all" ? undefined : chapter,
+            tags: []
         });
     };
 
@@ -228,10 +262,15 @@ export function KnowledgeFilter({
         if (node.children.length === 0) return [node.name];
         return node.children.flatMap(child => getLeafTags(child));
     };
-    // 去重标签，避免 React key 冲突
-    const tags = currentChapterNode
+
+    // 获取可用标签：优先使用页面中所有题目的标签，否则使用章节树中的标签
+    const treeTags = currentChapterNode
         ? [...new Set(getLeafTags(currentChapterNode))]
         : [];
+
+    const displayTags = availableTags && availableTags.length > 0
+        ? availableTags
+        : treeTags;
 
     // 过滤可用年级 (只显示数据库中存在的)
     // 对于非数学科目，如果不按照年级结构存储，这里可能会被清空
@@ -272,17 +311,99 @@ export function KnowledgeFilter({
                 </SelectContent>
             </Select>
 
-            <Select value={tag} onValueChange={handleTagChange} disabled={!chapter || chapter === "all"}>
-                <SelectTrigger className="w-[140px]">
-                    <SelectValue placeholder="知识点" />
-                </SelectTrigger>
-                <SelectContent>
-                    <SelectItem value="all">全部知识点</SelectItem>
-                    {tags.map(t => (
-                        <SelectItem key={t} value={t}>{t}</SelectItem>
-                    ))}
-                </SelectContent>
-            </Select>
+            {/* 多选知识点下拉列表 */}
+            <Popover open={isTagDropdownOpen} onOpenChange={setIsTagDropdownOpen}>
+                <PopoverTrigger asChild>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-[200px] justify-between"
+                        onClick={() => {
+                            if (displayTags.length === 0) {
+                                setIsTagDropdownOpen(false);
+                            }
+                        }}
+                    >
+                        {selectedTags.length === 0
+                            ? "知识点"
+                            : `已选 ${selectedTags.length} 个`}
+                        <ChevronDown className="ml-2 h-4 w-4" />
+                    </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[240px] p-0" align="start">
+                    <div className="p-2 space-y-1">
+                        {displayTags.length === 0 ? (
+                            <div className="px-2 py-4 text-center text-sm text-muted-foreground">
+                                暂无可用标签
+                            </div>
+                        ) : (
+                            <>
+                                <div className="flex items-center justify-between px-2 py-1 border-b">
+                                    <span className="text-sm font-medium">知识点筛选</span>
+                                    <div className="flex gap-1">
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-6 px-2 text-xs"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleSelectAllTags();
+                                            }}
+                                        >
+                                            全选
+                                        </Button>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-6 px-2 text-xs"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleClearTags();
+                                            }}
+                                        >
+                                            清除
+                                        </Button>
+                                    </div>
+                                </div>
+                                <div className="max-h-[300px] overflow-y-auto">
+                                    {displayTags.map(tag => (
+                                        <div
+                                            key={tag}
+                                            className="flex items-center gap-2 px-2 py-1.5 hover:bg-muted rounded cursor-pointer"
+                                            onClick={() => handleTagToggle(tag)}
+                                        >
+                                            <div className="flex-shrink-0">
+                                                {selectedTags.includes(tag) && (
+                                                    <Check className="h-4 w-4 text-primary" />
+                                                )}
+                                            </div>
+                                            <span className="text-sm flex-1">{tag}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                                {selectedTags.length > 0 && (
+                                    <div className="flex flex-wrap gap-1 px-2 py-2 border-t">
+                                        {selectedTags.map(tag => (
+                                            <Badge
+                                                key={tag}
+                                                variant="secondary"
+                                                className="text-xs"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleTagToggle(tag);
+                                                }}
+                                            >
+                                                {tag}
+                                                <X className="ml-1 h-3 w-3" />
+                                            </Badge>
+                                        ))}
+                                    </div>
+                                )}
+                            </>
+                        )}
+                    </div>
+                </PopoverContent>
+            </Popover>
         </div>
     );
 }
