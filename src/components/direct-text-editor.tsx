@@ -253,6 +253,7 @@ export function DirectTextEditor({ onSubmit, defaultNotebookId, defaultNotebookN
                         <SelectContent>
                             <SelectItem value="not_attempted">{t.editor?.mistakeStatuses?.notAttempted || "不会做"}</SelectItem>
                             <SelectItem value="wrong_attempt">{t.editor?.mistakeStatuses?.wrongAttempt || "做错了"}</SelectItem>
+                            <SelectItem value="partially_wrong">{t.editor?.mistakeStatuses?.partiallyWrong || "部分做错"}</SelectItem>
                             <SelectItem value="unknown">{t.editor?.mistakeStatuses?.unknown || "未判断"}</SelectItem>
                         </SelectContent>
                     </Select>

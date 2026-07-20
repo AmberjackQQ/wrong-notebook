@@ -766,6 +766,7 @@ export const translations = {
             mistakeStatuses: {
                 notAttempted: "不会做",
                 wrongAttempt: "做错了",
+                partiallyWrong: "部分做错",
                 unknown: "未判断",
                 focus: "重点关注",
             },

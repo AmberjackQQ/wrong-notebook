@@ -358,11 +358,12 @@ export default function ErrorDetailPage() {
             setScreenshotPreview(previewDataUrl);
 
         } catch (error) {
-            console.error('Screenshot failed:', error);
             if (error instanceof Error) {
                 if (error.name === 'NotAllowedError') {
-                    alert('您拒绝了屏幕截图权限');
+                    // 用户主动取消，不记录错误
+                    console.log('用户取消了屏幕截图');
                 } else {
+                    console.error('Screenshot failed:', error);
                     alert(`屏幕截图失败: ${error.message}`);
                 }
             }
@@ -702,11 +703,12 @@ export default function ErrorDetailPage() {
             setAnalysisScreenshotPreview(previewDataUrl);
 
         } catch (error) {
-            console.error('Analysis screenshot failed:', error);
             if (error instanceof Error) {
                 if (error.name === 'NotAllowedError') {
-                    alert('您拒绝了屏幕截图权限');
+                    // 用户主动取消，不记录错误
+                    console.log('用户取消了屏幕截图');
                 } else {
+                    console.error('Analysis screenshot failed:', error);
                     alert(`屏幕截图失败: ${error.message}`);
                 }
             }
@@ -2132,6 +2134,7 @@ export default function ErrorDetailPage() {
                                                 <SelectContent>
                                                     <SelectItem value="not_attempted">{t.editor?.mistakeStatuses?.notAttempted || '不会做'}</SelectItem>
                                                     <SelectItem value="wrong_attempt">{t.editor?.mistakeStatuses?.wrongAttempt || '做错了'}</SelectItem>
+                                                    <SelectItem value="partially_wrong">{t.editor?.mistakeStatuses?.partiallyWrong || '部分做错'}</SelectItem>
                                                     <SelectItem value="unknown">{t.editor?.mistakeStatuses?.unknown || '未判断'}</SelectItem>
                                                 </SelectContent>
                                             </Select>

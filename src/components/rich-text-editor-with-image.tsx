@@ -165,12 +165,14 @@ export function RichTextEditorWithImage({
       };
 
     } catch (error) {
-      console.error('❌ 屏幕截图失败:', error);
-      setIsScreenshotting(false);
-      // 用户取消屏幕共享时不需要显示错误提示
-      if ((error as Error).name !== 'NotAllowedError') {
+      // 用户主动取消，不记录错误
+      if ((error as Error).name === 'NotAllowedError') {
+        console.log('用户取消了屏幕截图');
+      } else {
+        console.error('❌ 屏幕截图失败:', error);
         alert('屏幕截图失败，请确保允许屏幕共享权限');
       }
+      setIsScreenshotting(false);
     }
   };
 

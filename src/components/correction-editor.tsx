@@ -540,6 +540,7 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
                                     <SelectContent>
                                         <SelectItem value="not_attempted">{t.editor.mistakeStatuses?.notAttempted || "不会做"}</SelectItem>
                                         <SelectItem value="wrong_attempt">{t.editor.mistakeStatuses?.wrongAttempt || "做错了"}</SelectItem>
+                                        <SelectItem value="partially_wrong">{t.editor.mistakeStatuses?.partiallyWrong || "部分做错"}</SelectItem>
                                         <SelectItem value="unknown">{t.editor.mistakeStatuses?.unknown || "未判断"}</SelectItem>
                                         <SelectItem value="focus">{t.editor.mistakeStatuses?.focus || "重点关注"}</SelectItem>
                                     </SelectContent>
@@ -682,11 +683,13 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
                                 {t.editor.mistakeStatus || "作答状态"}：
                                 {data.mistakeStatus === 'wrong_attempt'
                                     ? (t.editor.mistakeStatuses?.wrongAttempt || "做错了")
-                                    : data.mistakeStatus === 'not_attempted'
-                                        ? (t.editor.mistakeStatuses?.notAttempted || "不会做")
-                                        : data.mistakeStatus === 'focus'
-                                            ? (t.editor.mistakeStatuses?.focus || "重点关注")
-                                            : (t.editor.mistakeStatuses?.unknown || "未判断")}
+                                    : data.mistakeStatus === 'partially_wrong'
+                                        ? (t.editor.mistakeStatuses?.partiallyWrong || "部分做错")
+                                        : data.mistakeStatus === 'not_attempted'
+                                            ? (t.editor.mistakeStatuses?.notAttempted || "不会做")
+                                            : data.mistakeStatus === 'focus'
+                                                ? (t.editor.mistakeStatuses?.focus || "重点关注")
+                                                : (t.editor.mistakeStatuses?.unknown || "未判断")}
                             </div>
                             {data.wrongAnswerText && (
                                 <div>

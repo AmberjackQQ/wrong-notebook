@@ -560,8 +560,14 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
                                         </div>
                                         <div className="flex flex-wrap gap-2 mt-3">
                                             <Badge
-                                                variant={item.mistakeStatus === "focus" ? "default" : item.mistakeStatus === "wrong_attempt" ? "default" : "secondary"}
-                                                className={item.mistakeStatus === "focus" ? "text-xs bg-red-100 border-red-300 text-red-800" : "text-xs"}
+                                                variant={item.mistakeStatus === "focus" ? "default" : item.mistakeStatus === "wrong_attempt" ? "default" : item.mistakeStatus === "partially_wrong" ? "default" : "secondary"}
+                                                className={
+                                                    item.mistakeStatus === "focus"
+                                                        ? "text-xs bg-red-100 border-red-300 text-red-800"
+                                                        : item.mistakeStatus === "partially_wrong"
+                                                            ? "text-xs bg-orange-100 border-orange-300 text-orange-800"
+                                                            : "text-xs"
+                                                }
                                             >
                                                 {getMistakeStatusLabel(item.mistakeStatus, language)}
                                             </Badge>

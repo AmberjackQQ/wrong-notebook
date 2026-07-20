@@ -8,6 +8,7 @@ import {
 describe('mistake status helpers', () => {
     it('应该只接受合法作答状态', () => {
         expect(normalizeMistakeStatus('wrong_attempt')).toBe('wrong_attempt');
+        expect(normalizeMistakeStatus('partially_wrong')).toBe('partially_wrong');
         expect(normalizeMistakeStatus('not_attempted')).toBe('not_attempted');
         expect(normalizeMistakeStatus('unknown')).toBe('unknown');
         expect(normalizeMistakeStatus('invalid')).toBe('unknown');
@@ -30,6 +31,8 @@ describe('mistake status helpers', () => {
 
     it('应该按语言显示状态标签', () => {
         expect(getMistakeStatusLabel('wrong_attempt', 'zh')).toBe('做错了');
+        expect(getMistakeStatusLabel('partially_wrong', 'zh')).toBe('部分做错');
+        expect(getMistakeStatusLabel('partially_wrong', 'en')).toBe('Partially wrong');
         expect(getMistakeStatusLabel('not_attempted', 'en')).toBe('Not attempted');
         expect(getMistakeStatusLabel('bad-value', 'zh')).toBe('未判断');
     });

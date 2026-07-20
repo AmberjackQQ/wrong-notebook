@@ -165,11 +165,12 @@ export function UploadZone({ onImageSelect, isAnalyzing }: UploadZoneProps) {
             }, 'image/png', 1.0);
 
         } catch (error) {
-            console.error('Screenshot failed:', error);
             if (error instanceof Error) {
                 if (error.name === 'NotAllowedError') {
-                    alert(t.upload.screenshotPermissionDenied);
+                    // 用户主动取消，不记录错误
+                    console.log('用户取消了屏幕截图');
                 } else {
+                    console.error('Screenshot failed:', error);
                     alert(`${t.upload.screenshotFailed}: ${error.message}`);
                 }
             }
