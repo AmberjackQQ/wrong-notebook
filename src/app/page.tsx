@@ -324,7 +324,6 @@ function HomeContent() {
             setStep("upload");
             setParsedData(null);
             setCurrentImage(null);
-            alert(t.common?.messages?.saveSuccess || 'Saved successfully!');
 
             // Redirect to notebook page if subjectId is present
             if (finalData.subjectId) {
@@ -454,7 +453,6 @@ function HomeContent() {
 
             frontendLogger.info('[HomeDirectSave]', 'Save successful');
             setAnalysisStep('idle');
-            alert(t.common?.messages?.saveSuccess || 'Saved successfully!');
 
             if (data.subjectId) {
                 router.push(`/notebooks/${data.subjectId}`);

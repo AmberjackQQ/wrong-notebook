@@ -354,7 +354,6 @@ export default function AddErrorPage() {
                 frontendLogger.info('[AddSave]', 'Duplicate submission detected, using existing record');
             }
 
-            alert(t.common.messages?.saveSuccess || 'Saved!');
             router.push(`/notebooks/${notebookId}`);
         } catch (error) {
             console.error(error);

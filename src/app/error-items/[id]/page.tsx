@@ -1166,7 +1166,6 @@ export default function ErrorDetailPage() {
                 });
             }
             setQuestionImages([]);
-            alert(t.common?.messages?.saveSuccess || 'Saved successfully');
         } catch (error) {
             console.error(error);
             alert(t.common?.messages?.saveFailed || 'Save failed');
@@ -1243,7 +1242,6 @@ export default function ErrorDetailPage() {
             }
             setAnswerImages([]);
             setAnswerTimeInput("");
-            alert(t.common?.messages?.saveSuccess || 'Saved successfully');
         } catch (error: any) {
             console.error('Save answer error:', error);
             const errorMessage = error?.data?.message || error?.message || error?.toString() || 'Unknown error';
@@ -1299,7 +1297,6 @@ export default function ErrorDetailPage() {
                 } as typeof item);
             }
             setAnalysisImages([]);
-            alert(t.common?.messages?.saveSuccess || 'Saved successfully');
         } catch (error) {
             console.error(error);
             alert(t.common?.messages?.saveFailed || 'Save failed');
@@ -1342,7 +1339,6 @@ export default function ErrorDetailPage() {
                     mistakeStatus: normalizedStatus,
                 });
             }
-            alert(t.common?.messages?.saveSuccess || 'Saved successfully');
         } catch (error) {
             console.error(error);
             alert(t.common?.messages?.saveFailed || 'Save failed');
