@@ -444,7 +444,19 @@ function PrintPreviewContent() {
 
 
                             {/* Answer */}
-                            {showAnswers && (item.answerText || item.answerImages) && (
+                            {showAnswers && (() => {
+                                const hasAnswerText = item.answerText?.trim().length > 0;
+                                let hasAnswerImages = false;
+                                if (item.answerImages) {
+                                    try {
+                                        const images = JSON.parse(item.answerImages);
+                                        hasAnswerImages = Array.isArray(images) && images.length > 0;
+                                    } catch (e) {
+                                        hasAnswerImages = false;
+                                    }
+                                }
+                                return hasAnswerText || hasAnswerImages;
+                            })() && (
                                 <div className="mb-4">
                                     <h3 className="font-semibold mb-2">{t.printPreview?.referenceAnswer || '做题答案'}:</h3>
                                     {item.answerText && <MarkdownRenderer content={item.answerText} />}
@@ -483,7 +495,19 @@ function PrintPreviewContent() {
                             )}
 
                             {/* Analysis */}
-                            {showAnalysis && (item.analysis || item.analysisImages) && (
+                            {showAnalysis && (() => {
+                                const hasAnalysisText = item.analysis?.trim().length > 0;
+                                let hasAnalysisImages = false;
+                                if (item.analysisImages) {
+                                    try {
+                                        const images = JSON.parse(item.analysisImages);
+                                        hasAnalysisImages = Array.isArray(images) && images.length > 0;
+                                    } catch (e) {
+                                        hasAnalysisImages = false;
+                                    }
+                                }
+                                return hasAnalysisText || hasAnalysisImages;
+                            })() && (
                                 <div className="mb-4">
                                     <h3 className="font-semibold mb-2">{t.printPreview?.analysis || 'Analysis'}:</h3>
                                     {item.analysis && <MarkdownRenderer content={item.analysis} />}
