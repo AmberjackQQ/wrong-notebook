@@ -17,7 +17,14 @@ import { Upload, BookOpen, Tags, LogOut, BarChart3, PenLine } from "lucide-react
 import { SettingsDialog } from "@/components/settings-dialog";
 import { BroadcastNotification } from "@/components/broadcast-notification";
 import { signOut } from "next-auth/react";
-
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
 import { ProgressFeedback, ProgressStatus } from "@/components/ui/progress-feedback";
 import { frontendLogger } from "@/lib/frontend-logger";
 import { TextInputZone } from "@/components/text-input-zone";
@@ -41,6 +48,10 @@ function HomeContent() {
 
     // Input mode: "image" for photo upload, "text" for AI solve, "direct" for manual entry
     const [inputMode, setInputMode] = useState<"image" | "text" | "direct">("image");
+
+    // Clipboard image detection state
+    const [clipboardImage, setClipboardImage] = useState<File | null>(null);
+    const [showClipboardDialog, setShowClipboardDialog] = useState(false);
 
     // Cropper state
     const [croppingImage, setCroppingImage] = useState<string | null>(null);
@@ -140,33 +151,12 @@ function HomeContent() {
                         for (const type of item.types) {
                             if (type.startsWith('image/')) {
                                 const blob = await item.getType(type);
-                                const imageUrl = URL.createObjectURL(blob);
-                                frontendLogger.info('[Home]', 'Found image in clipboard, using directly');
+                                frontendLogger.info('[Home]', 'Found image in clipboard, asking user');
 
-                                // Convert to File and process
+                                // Convert to File and store for user decision
                                 const file = new File([blob], "clipboard-image.jpg", { type: "image/jpeg" });
-
-                                // Check if AI analysis is enabled
-                                const useAI = config?.defaultUseAI ?? true;
-
-                                if (useAI) {
-                                    handleAnalyze(file);
-                                } else {
-                                    // Skip AI analysis, go directly to review
-                                    setParsedData({
-                                        questionText: "",
-                                        answerText: "",
-                                        analysis: "",
-                                        knowledgePoints: [],
-                                        wrongAnswerText: "",
-                                        mistakeAnalysis: "",
-                                        mistakeStatus: "unknown",
-                                        subject: (notebooks.find(n => n.id === (initialNotebookId || autoSelectedNotebookId))?.name as any) || "数学",
-                                        requiresImage: true,
-                                    });
-                                    setCurrentImage(await processImageFile(file));
-                                    setStep("review");
-                                }
+                                setClipboardImage(file);
+                                setShowClipboardDialog(true);
                                 return; // Exit after finding first image
                             }
                         }
@@ -188,6 +178,51 @@ function HomeContent() {
 
         return () => clearTimeout(timeoutId);
     }, [config, notebooks, initialNotebookId, autoSelectedNotebookId]);
+
+    // Handle user decision for clipboard image
+    const handleUseClipboardImage = () => {
+        if (!clipboardImage) return;
+
+        frontendLogger.info('[Home]', 'User chose to use clipboard image');
+        setShowClipboardDialog(false);
+
+        // Check if AI analysis is enabled
+        const useAI = config?.defaultUseAI ?? true;
+
+        if (useAI) {
+            handleAnalyze(clipboardImage);
+        } else {
+            // Skip AI analysis, go directly to review
+            const processImage = async () => {
+                try {
+                    const base64Image = await processImageFile(clipboardImage);
+                    setCurrentImage(base64Image);
+                    setParsedData({
+                        questionText: "",
+                        answerText: "",
+                        analysis: "",
+                        knowledgePoints: [],
+                        wrongAnswerText: "",
+                        mistakeAnalysis: "",
+                        mistakeStatus: "unknown",
+                        subject: (notebooks.find(n => n.id === (initialNotebookId || autoSelectedNotebookId))?.name as any) || "数学",
+                        requiresImage: true,
+                    });
+                    setStep("review");
+                } catch (error) {
+                    console.error('Failed to process clipboard image:', error);
+                    alert('图片处理失败，请重试');
+                }
+            };
+            processImage();
+        }
+    };
+
+    const handleRejectClipboardImage = () => {
+        frontendLogger.info('[Home]', 'User rejected clipboard image');
+        setShowClipboardDialog(false);
+        setClipboardImage(null);
+    };
 
     const handleCropComplete = async (croppedBlob: Blob) => {
         setIsCropperOpen(false);
@@ -566,6 +601,26 @@ function HomeContent() {
                 progress={progress}
                 message={getProgressMessage()}
             />
+
+            {/* Clipboard Image Confirmation Dialog */}
+            <Dialog open={showClipboardDialog} onOpenChange={setShowClipboardDialog}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>检测到剪贴板图片</DialogTitle>
+                        <DialogDescription>
+                            系统检测到您的剪贴板中有一张图片，是否将其作为题目图片使用？
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={handleRejectClipboardImage}>
+                            不使用
+                        </Button>
+                        <Button onClick={handleUseClipboardImage}>
+                            使用图片
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             <div className="container mx-auto p-4 space-y-8 pb-20">
                 {/* Header Section */}

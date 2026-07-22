@@ -16,6 +16,14 @@ import { ArrowLeft, Upload, PenLine } from "lucide-react";
 import { ProgressFeedback, ProgressStatus } from "@/components/ui/progress-feedback";
 import { frontendLogger } from "@/lib/frontend-logger";
 import { TextInputZone } from "@/components/text-input-zone";
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
 
 export default function AddErrorPage() {
     const params = useParams();
@@ -37,6 +45,10 @@ export default function AddErrorPage() {
     // Cropper state
     const [croppingImage, setCroppingImage] = useState<string | null>(null);
     const [isCropperOpen, setIsCropperOpen] = useState(false);
+
+    // Clipboard image detection state
+    const [clipboardImage, setClipboardImage] = useState<File | null>(null);
+    const [showClipboardDialog, setShowClipboardDialog] = useState(false);
 
     // Timeout Config
     const aiTimeout = config?.timeouts?.analyze || 180000;
@@ -107,45 +119,11 @@ export default function AddErrorPage() {
                                 const imageUrl = URL.createObjectURL(blob);
                                 frontendLogger.info('[AddError]', 'Found image in clipboard, using directly');
 
-                                // Convert to File and process
+                                // Convert to File and show confirmation dialog
                                 const file = new File([blob], "clipboard-image.jpg", { type: "image/jpeg" });
-
-                                // Check if AI analysis is disabled
-                                if (config?.defaultUseAI === false) {
-                                    // Skip AI analysis, go directly to review page
-                                    frontendLogger.info('[AddError]', 'AI analysis disabled, skipping to review with clipboard image');
-                                    try {
-                                        setAnalysisStep('compressing');
-                                        const base64Image = await processImageFile(file);
-                                        setCurrentImage(base64Image);
-                                        setAnalysisStep('processing');
-                                        setProgress(100);
-
-                                        // Set empty parsed data for manual entry
-                                        setParsedData({
-                                            questionText: "",
-                                            answerText: "",
-                                            analysis: "",
-                                            knowledgePoints: [],
-                                            wrongAnswerText: "",
-                                            mistakeAnalysis: "",
-                                            mistakeStatus: "unknown",
-                                            subject: (notebook?.name as any) || "数学",
-                                            requiresImage: true,
-                                        });
-                                        setStep("review");
-                                    } catch (error: any) {
-                                        frontendLogger.error('[AddError]', 'Failed to process clipboard image for manual entry', {
-                                            error: error.message || String(error)
-                                        });
-                                        alert('Failed to process image. Please try again.');
-                                    } finally {
-                                        setAnalysisStep('idle');
-                                    }
-                                } else {
-                                    // Use AI analysis, call handleAnalyze
-                                    handleAnalyze(file);
-                                }
+                                frontendLogger.info('[AddError]', 'Found image in clipboard, showing confirmation dialog');
+                                setClipboardImage(file);
+                                setShowClipboardDialog(true);
                                 return; // Exit after finding first image
                             }
                         }
@@ -167,6 +145,56 @@ export default function AddErrorPage() {
 
         return () => clearTimeout(timeoutId);
     }, [step, config, notebook]);
+
+    const handleUseClipboardImage = async () => {
+        if (!clipboardImage) return;
+
+        frontendLogger.info('[AddError]', 'User chose to use clipboard image');
+        setShowClipboardDialog(false);
+
+        // Check if AI analysis is disabled
+        if (config?.defaultUseAI === false) {
+            // Skip AI analysis, go directly to review page
+            frontendLogger.info('[AddError]', 'AI analysis disabled, skipping to review with clipboard image');
+            try {
+                setAnalysisStep('compressing');
+                const base64Image = await processImageFile(clipboardImage);
+                setCurrentImage(base64Image);
+                setAnalysisStep('processing');
+                setProgress(100);
+
+                // Set empty parsed data for manual entry
+                setParsedData({
+                    questionText: "",
+                    answerText: "",
+                    analysis: "",
+                    knowledgePoints: [],
+                    wrongAnswerText: "",
+                    mistakeAnalysis: "",
+                    mistakeStatus: "unknown",
+                    subject: (notebook?.name as any) || "数学",
+                    requiresImage: true,
+                });
+                setStep("review");
+            } catch (error: any) {
+                frontendLogger.error('[AddError]', 'Failed to process clipboard image for manual entry', {
+                    error: error.message || String(error)
+                });
+                alert('Failed to process image. Please try again.');
+            } finally {
+                setAnalysisStep('idle');
+            }
+        } else {
+            // Use AI analysis, call handleAnalyze
+            handleAnalyze(clipboardImage);
+        }
+    };
+
+    const handleRejectClipboardImage = () => {
+        frontendLogger.info('[AddError]', 'User chose not to use clipboard image');
+        setShowClipboardDialog(false);
+        setClipboardImage(null);
+    };
 
     // Simulate progress for smoother UX with timeout protection
     useEffect(() => {
@@ -554,6 +582,26 @@ export default function AddErrorPage() {
                 onClose={() => setIsCropperOpen(false)}
                 onCropComplete={handleCropComplete}
             />
+
+            {/* Clipboard Image Confirmation Dialog */}
+            <Dialog open={showClipboardDialog} onOpenChange={setShowClipboardDialog}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>{t.app?.useClipboardImage || "使用剪贴板图片"}</DialogTitle>
+                        <DialogDescription>
+                            {t.app?.clipboardImagePrompt || "检测到剪贴板中有图片，是否使用该图片进行错题分析？"}
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={handleRejectClipboardImage}>
+                            {t.common?.cancel || "取消"}
+                        </Button>
+                        <Button onClick={handleUseClipboardImage}>
+                            {t.common?.confirm || "确认"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </main>
     );
 }
