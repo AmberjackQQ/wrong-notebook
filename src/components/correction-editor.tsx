@@ -29,6 +29,7 @@ interface ParsedQuestionWithSubject extends ParsedQuestion {
     subjectId?: string;
     gradeSemester?: string;
     paperLevel?: string;
+    questionNumber?: string;
     geogebraCommands?: string;
     answerImages?: string; // JSON string of answer images
     analysisImages?: string; // JSON string of analysis images
@@ -40,6 +41,7 @@ interface CorrectionEditorProps {
     onCancel: () => void;
     imagePreview?: string | null;
     initialSubjectId?: string;
+    initialPaperLevel?: string;
     aiTimeout?: number;
 }
 
@@ -50,7 +52,7 @@ type ReanswerErrorMessages = {
     responseError?: string;
 };
 
-export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, initialSubjectId, aiTimeout }: CorrectionEditorProps) {
+export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, initialSubjectId, initialPaperLevel, aiTimeout }: CorrectionEditorProps) {
     const [data, setData] = useState<ParsedQuestionWithSubject>({
         ...initialData,
         wrongAnswerText: initialData.wrongAnswerText || "",
@@ -58,7 +60,8 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
         mistakeStatus: initialData.mistakeStatus || "unknown",
         subjectId: initialSubjectId,
         gradeSemester: "",
-        paperLevel: "模拟考试"
+        paperLevel: initialPaperLevel || "模拟考试",
+        questionNumber: ""
     });
     const { t, language } = useLanguage();
     const [isReanswering, setIsReanswering] = useState(false);
@@ -81,6 +84,13 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
 
     // Fetch user info and calculate grade on mount
     useEffect(() => {
+        // Log pre-set paper level if provided
+        if (initialPaperLevel) {
+            frontendLogger.info('[CorrectionEditor]', 'Using pre-set paper level from list filters', {
+                paperLevel: initialPaperLevel
+            });
+        }
+
         // Fetch notebooks for mapping
         apiClient.get<Notebook[]>("/api/notebooks")
             .then(setNotebooks)
@@ -108,7 +118,7 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
                 }
             })
             .catch(err => console.error("Failed to fetch user info for grade calculation:", err));
-    }, [language]);
+    }, [language, initialPaperLevel]);
 
     // 重新解题函数
     const handleReanswer = async () => {
@@ -446,6 +456,18 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
                                 </PopoverContent>
                             </Popover>
                         </div>
+                    </div>
+
+                    <div className="space-y-2">
+                        <Label>题号</Label>
+                        <Input
+                            value={data.questionNumber || ""}
+                            onChange={(e) => setData({ ...data, questionNumber: e.target.value })}
+                            placeholder="例如：1、2、3或(1)、(2)、(3)"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                            可选：为题目添加编号标识
+                        </p>
                     </div>
 
                     <div className="space-y-2">

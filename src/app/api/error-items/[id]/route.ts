@@ -75,7 +75,9 @@ export async function PUT(
         }
 
         const body = await req.json();
-        const { knowledgePoints, gradeSemester, paperLevel, questionText, questionImages, answerText, answerImages, analysis, analysisImages, subjectId,  wrongAnswerText, mistakeAnalysis, mistakeStatus, geogebraCommands, createdAt, answerTime } = body;
+        const { knowledgePoints, gradeSemester, paperLevel, questionNumber, questionText, questionImages, answerText, answerImages, analysis, analysisImages, subjectId,  wrongAnswerText, mistakeAnalysis, mistakeStatus, geogebraCommands, createdAt, answerTime } = body;
+
+        logger.debug({ questionNumber, gradeSemester, paperLevel }, 'Received update request with metadata fields');
 
         const errorItem = await prisma.errorItem.findUnique({
             where: { id },
@@ -94,6 +96,7 @@ export async function PUT(
         const updateData: Prisma.ErrorItemUpdateInput = {};
         if (gradeSemester !== undefined) updateData.gradeSemester = gradeSemester;
         if (paperLevel !== undefined) updateData.paperLevel = paperLevel;
+        if (questionNumber !== undefined) updateData.questionNumber = questionNumber || null;
         if (questionText !== undefined) updateData.questionText = questionText;
         if (questionImages !== undefined) updateData.questionImages = questionImages || null;
         if (answerText !== undefined) updateData.answerText = answerText || null; // 空字符串转null
@@ -193,7 +196,7 @@ export async function PUT(
             updateData.knowledgePoints = JSON.stringify(tagNames);
         }
 
-        logger.info({ id, updateData }, 'Updating error item');
+        logger.info({ id, updateData: { ...updateData, questionNumber: updateData.questionNumber } }, 'Updating error item with metadata');
 
         const updated = await prisma.errorItem.update({
             where: { id },

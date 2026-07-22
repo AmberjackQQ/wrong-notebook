@@ -29,6 +29,7 @@ export default function AddErrorPage() {
     const { t, language } = useLanguage();
     const [notebook, setNotebook] = useState<Notebook | null>(null);
     const [config, setConfig] = useState<AppConfig | null>(null);
+    const [initialPaperLevel, setInitialPaperLevel] = useState<string | undefined>(undefined);
 
     // Input mode: "image" for photo upload, "text" for manual text input
     const [inputMode, setInputMode] = useState<"image" | "text">("image");
@@ -51,6 +52,23 @@ export default function AddErrorPage() {
     }, [croppingImage]);
 
     useEffect(() => {
+        // Load initial paper level from localStorage
+        try {
+            const filterKey = `errorListFilters_${notebookId}`;
+            const storedFilters = localStorage.getItem(filterKey);
+            if (storedFilters) {
+                const filters = JSON.parse(storedFilters);
+                if (filters.paperLevelFilter && filters.paperLevelFilter !== 'all') {
+                    setInitialPaperLevel(filters.paperLevelFilter);
+                    frontendLogger.info('[AddError]', 'Loaded initial paper level from filters', {
+                        paperLevel: filters.paperLevelFilter
+                    });
+                }
+            }
+        } catch (error) {
+            console.error('Failed to load paper level from localStorage:', error);
+        }
+
         // Fetch notebook info
         apiClient.get<Notebook>(`/api/notebooks/${notebookId}`)
             .then(data => setNotebook(data))
@@ -341,7 +359,7 @@ export default function AddErrorPage() {
         }
     };
 
-    const handleSave = async (finalData: ParsedQuestion & { subjectId?: string; gradeSemester?: string; paperLevel?: string }): Promise<void> => {
+    const handleSave = async (finalData: ParsedQuestion & { subjectId?: string; gradeSemester?: string; paperLevel?: string; questionNumber?: string }): Promise<void> => {
         try {
             const result = await apiClient.post<{ id: string; duplicate?: boolean }>("/api/error-items", {
                 ...finalData,
@@ -446,6 +464,7 @@ export default function AddErrorPage() {
                         onSave={handleSave}
                         onCancel={() => setStep("upload")}
                         initialSubjectId={notebookId}
+                        initialPaperLevel={initialPaperLevel}
                         aiTimeout={aiTimeout}
                     />
                 )}

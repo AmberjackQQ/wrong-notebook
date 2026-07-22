@@ -113,6 +113,7 @@ model ErrorItem {
   masteryLevel     Int     @default(0) // 0: New, 1: Reviewing, 2: Mastered
   gradeSemester    String? // e.g. "Junior High Grade 2, 1st Semester"
   paperLevel       String? // e.g. "a", "b", "other" - 题目来源：模拟考试、期中考试、期末考试等
+  questionNumber   String? // 题号，用户自定义的题目编号
   answerTime       DateTime? // 答题时间
 
   createdAt        DateTime @default(now())

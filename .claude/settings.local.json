@@ -61,7 +61,10 @@
       "Bash(docker-compose restart *)",
       "Bash(pkill -f \"next dev\")",
       "Bash(tasklist *)",
-      "Bash(git diff *)"
+      "Bash(git diff *)",
+      "mcp__web-search-prime__web_search_prime",
+      "Bash(npm --version)",
+      "Bash(npx next *)"
     ]
   }
 }

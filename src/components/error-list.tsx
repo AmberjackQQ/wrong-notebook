@@ -40,16 +40,76 @@ type KnowledgeFilterChange = {
     tags?: string[];
 };
 
+// LocalStorage keys for filter persistence
+const FILTER_STORAGE_KEY = 'errorListFilters';
+
+// Filter state interface
+interface FilterState {
+    masteryFilter: "all" | "mastered" | "unmastered";
+    timeFilter: "all" | "week" | "month";
+    gradeFilter: string;
+    chapterFilter: string;
+    paperLevelFilter: string;
+    selectedTags: string[];
+    search: string;
+    sortBy: string;
+    sortOrder: "asc" | "desc";
+}
+
+// Load filter state from localStorage
+const loadFilterState = (subjectId?: string): FilterState => {
+    if (typeof window === 'undefined') return getDefaultFilterState();
+
+    try {
+        const key = subjectId ? `${FILTER_STORAGE_KEY}_${subjectId}` : FILTER_STORAGE_KEY;
+        const stored = localStorage.getItem(key);
+        if (stored) {
+            return { ...getDefaultFilterState(), ...JSON.parse(stored) };
+        }
+    } catch (error) {
+        console.error('Failed to load filter state:', error);
+    }
+    return getDefaultFilterState();
+};
+
+// Save filter state to localStorage
+const saveFilterState = (state: FilterState, subjectId?: string) => {
+    if (typeof window === 'undefined') return;
+
+    try {
+        const key = subjectId ? `${FILTER_STORAGE_KEY}_${subjectId}` : FILTER_STORAGE_KEY;
+        localStorage.setItem(key, JSON.stringify(state));
+    } catch (error) {
+        console.error('Failed to save filter state:', error);
+    }
+};
+
+// Get default filter state
+const getDefaultFilterState = (): FilterState => ({
+    masteryFilter: "all",
+    timeFilter: "all",
+    gradeFilter: "",
+    chapterFilter: "",
+    paperLevelFilter: "all",
+    selectedTags: [],
+    search: "",
+    sortBy: "createdAt",
+    sortOrder: "desc",
+});
+
 export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
     const [items, setItems] = useState<ErrorItem[]>([]);
     const [, setLoading] = useState(true);
-    const [search, setSearch] = useState("");
-    const [masteryFilter, setMasteryFilter] = useState<"all" | "mastered" | "unmastered">("all");
-    const [timeFilter, setTimeFilter] = useState<"all" | "week" | "month">("all");
-    const [gradeFilter, setGradeFilter] = useState("");
-    const [chapterFilter, setChapterFilter] = useState("");
-    const [paperLevelFilter, setPaperLevelFilter] = useState<string>("all");
-    const [selectedTags, setSelectedTags] = useState<string[]>([]);
+
+    // Load initial filter state from localStorage
+    const initialFilterState = loadFilterState(subjectId);
+    const [search, setSearch] = useState(initialFilterState.search);
+    const [masteryFilter, setMasteryFilter] = useState<"all" | "mastered" | "unmastered">(initialFilterState.masteryFilter);
+    const [timeFilter, setTimeFilter] = useState<"all" | "week" | "month">(initialFilterState.timeFilter);
+    const [gradeFilter, setGradeFilter] = useState(initialFilterState.gradeFilter);
+    const [chapterFilter, setChapterFilter] = useState(initialFilterState.chapterFilter);
+    const [paperLevelFilter, setPaperLevelFilter] = useState<string>(initialFilterState.paperLevelFilter);
+    const [selectedTags, setSelectedTags] = useState<string[]>(initialFilterState.selectedTags);
     const [expandedTags, setExpandedTags] = useState<Set<string>>(new Set());
     // 分页状态
     const [page, setPage] = useState(1);
@@ -64,10 +124,26 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
     const [customQuestionSources, setCustomQuestionSources] = useState<string[]>([]);
     const [sourcePopoverOpen, setSourcePopoverOpen] = useState(false);
     // 排序状态
-    const [sortBy, setSortBy] = useState<string>("createdAt");
-    const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+    const [sortBy, setSortBy] = useState<string>(initialFilterState.sortBy);
+    const [sortOrder, setSortOrder] = useState<"asc" | "desc">(initialFilterState.sortOrder);
     const { t, language } = useLanguage();
     const router = useRouter();
+
+    // Save filter state whenever filters change
+    useEffect(() => {
+        const filterState: FilterState = {
+            masteryFilter,
+            timeFilter,
+            gradeFilter,
+            chapterFilter,
+            paperLevelFilter,
+            selectedTags,
+            search,
+            sortBy,
+            sortOrder,
+        };
+        saveFilterState(filterState, subjectId);
+    }, [masteryFilter, timeFilter, gradeFilter, chapterFilter, paperLevelFilter, selectedTags, search, sortBy, sortOrder, subjectId]);
 
     const handleExportPrint = () => {
         const params = new URLSearchParams();
@@ -641,6 +717,11 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
                                             {item.paperLevel && (
                                                 <Badge variant="outline" className="text-xs bg-purple-50 border-purple-200 text-purple-700">
                                                     {item.paperLevel}
+                                                </Badge>
+                                            )}
+                                            {item.questionNumber && (
+                                                <Badge variant="outline" className="text-xs bg-blue-50 border-blue-200 text-blue-700">
+                                                    题号: {item.questionNumber}
                                                 </Badge>
                                             )}
                                         </div>

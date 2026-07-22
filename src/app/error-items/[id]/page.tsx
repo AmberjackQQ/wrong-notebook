@@ -61,6 +61,7 @@ interface ErrorItemDetail {
     } | null;
     gradeSemester?: string | null;
     paperLevel?: string | null;
+    questionNumber?: string | null; // 题号
     answerTime?: string | null; // 答题时间
     geogebraCommands?: string | null;
     createdAt: string; // 添加导入时间字段
@@ -84,6 +85,7 @@ export default function ErrorDetailPage() {
     const [paperLevelInput, setPaperLevelInput] = useState("模拟考试");
     const [notebookInput, setNotebookInput] = useState<string | null>(null);
     const [importTimeInput, setImportTimeInput] = useState("");
+    const [questionNumberInput, setQuestionNumberInput] = useState("");
 
     const [educationStage, setEducationStage] = useState<string | undefined>(undefined);
 
@@ -1051,6 +1053,7 @@ export default function ErrorDetailPage() {
             setNotebookInput(item.subjectId || null);
             setGradeSemesterInput(item.gradeSemester || "");
             setPaperLevelInput(item.paperLevel || "模拟考试");
+            setQuestionNumberInput(item.questionNumber || "");
             // 格式化导入时间为 datetime-local 格式
             const importTime = new Date(item.createdAt);
             const formattedTime = importTime.toISOString().slice(0, 16); // YYYY-MM-DDTHH:mm
@@ -1061,23 +1064,32 @@ export default function ErrorDetailPage() {
 
     const saveMetadataHandler = async () => {
         try {
-            // 转换导入时间为ISO格式
-            const parsedTime = new Date(importTimeInput);
-            const formattedTime = parsedTime.toISOString();
-
-            await apiClient.put(`/api/error-items/${item?.id}`, {
+            const updateData: any = {
                 subjectId: notebookInput || null,
                 gradeSemester: gradeSemesterInput,
                 paperLevel: paperLevelInput,
-                createdAt: formattedTime, // 添加导入时间更新
-            });
+                questionNumber: questionNumberInput || null,
+            };
+
+            // 只有在导入时间有值时才转换和添加
+            if (importTimeInput) {
+                const parsedTime = new Date(importTimeInput);
+                if (!isNaN(parsedTime.getTime())) {
+                    updateData.createdAt = parsedTime.toISOString();
+                }
+            }
+
+            console.log('Sending update data:', updateData);
+
+            await apiClient.put(`/api/error-items/${item?.id}`, updateData);
 
             setIsEditingMetadata(false);
             fetchItem(params.id as string);
             alert(t.common?.messages?.metaUpdateSuccess || 'Metadata updated successfully!');
-        } catch (error) {
-            console.error(error);
-            alert(t.common?.messages?.updateFailed || 'Update failed');
+        } catch (error: any) {
+            console.error('Update failed with error:', error);
+            const errorMessage = error?.data?.message || error?.response?.data?.message || error?.message || error?.toString();
+            alert(`保存失败: ${errorMessage}`);
         }
     };
 
@@ -1086,6 +1098,7 @@ export default function ErrorDetailPage() {
         setNotebookInput(null);
         setGradeSemesterInput("");
         setPaperLevelInput("a");
+        setQuestionNumberInput("");
         setImportTimeInput("");
     };
 
@@ -1758,6 +1771,16 @@ export default function ErrorDetailPage() {
                                             </div>
                                             <div className="space-y-2">
                                                 <label className="text-sm text-muted-foreground">
+                                                    题号
+                                                </label>
+                                                <Input
+                                                    value={questionNumberInput}
+                                                    onChange={(e) => setQuestionNumberInput(e.target.value)}
+                                                    placeholder="例如：1、2、3或(1)、(2)、(3)"
+                                                />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-sm text-muted-foreground">
                                                     导入时间
                                                 </label>
                                                 <Input
@@ -1798,6 +1821,14 @@ export default function ErrorDetailPage() {
                                                     {item.paperLevel || (t.common?.notSet || '未设置')}
                                                 </span>
                                             </div>
+                                            {item.questionNumber && (
+                                                <div className="flex justify-between">
+                                                    <span className="text-muted-foreground">题号:</span>
+                                                    <span className="font-medium">
+                                                        {item.questionNumber}
+                                                    </span>
+                                                </div>
+                                            )}
                                             <div className="flex justify-between">
                                                 <span className="text-muted-foreground">导入时间:</span>
                                                 <span className="font-medium">

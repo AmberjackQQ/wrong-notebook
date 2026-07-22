@@ -35,6 +35,7 @@ function HomeContent() {
     const initialNotebookId = searchParams.get("notebook");
     const [notebooks, setNotebooks] = useState<{ id: string; name: string }[]>([]);
     const [autoSelectedNotebookId, setAutoSelectedNotebookId] = useState<string | null>(null);
+    const [initialPaperLevel, setInitialPaperLevel] = useState<string | undefined>(undefined);
 
     const [config, setConfig] = useState<AppConfig | null>(null);
 
@@ -59,6 +60,26 @@ function HomeContent() {
     }, [croppingImage]);
 
     useEffect(() => {
+        // Load initial paper level from localStorage when notebook is selected
+        if (autoSelectedNotebookId) {
+            try {
+                const filterKey = `errorListFilters_${autoSelectedNotebookId}`;
+                const storedFilters = localStorage.getItem(filterKey);
+                if (storedFilters) {
+                    const filters = JSON.parse(storedFilters);
+                    if (filters.paperLevelFilter && filters.paperLevelFilter !== 'all') {
+                        setInitialPaperLevel(filters.paperLevelFilter);
+                        frontendLogger.info('[Home]', 'Loaded initial paper level from filters', {
+                            paperLevel: filters.paperLevelFilter,
+                            notebookId: autoSelectedNotebookId
+                        });
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load paper level from localStorage:', error);
+            }
+        }
+
         // Fetch notebooks for auto-selection
         apiClient.get<Notebook[]>("/api/notebooks")
             .then(data => setNotebooks(data))
@@ -75,7 +96,7 @@ function HomeContent() {
                 }
             })
             .catch(err => console.error("Failed to fetch config:", err));
-    }, []);
+    }, [autoSelectedNotebookId]);
 
     // Simulate progress for smoother UX with timeout protection
     useEffect(() => {
@@ -299,7 +320,7 @@ function HomeContent() {
         }
     };
 
-    const handleSave = async (finalData: ParsedQuestion & { subjectId?: string }): Promise<void> => {
+    const handleSave = async (finalData: ParsedQuestion & { subjectId?: string; questionNumber?: string }): Promise<void> => {
         frontendLogger.info('[HomeSave]', 'Starting save process', {
             hasQuestionText: !!finalData.questionText,
             hasAnswerText: !!finalData.answerText,
@@ -646,6 +667,7 @@ function HomeContent() {
                         onCancel={() => setStep("upload")}
                         imagePreview={currentImage}
                         initialSubjectId={initialNotebookId || autoSelectedNotebookId || undefined}
+                        initialPaperLevel={initialPaperLevel}
                         aiTimeout={aiTimeout}
                     />
                 )}

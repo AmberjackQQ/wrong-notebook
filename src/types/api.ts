@@ -71,6 +71,7 @@ export interface ErrorItem {
     masteryLevel: number;
     gradeSemester?: string | null;
     paperLevel?: string | null;
+    questionNumber?: string | null; // 题号
     answerTime?: string | null; // 答题时间
 
     createdAt: string;
@@ -83,6 +84,7 @@ export interface CreateErrorItemRequest extends ParsedQuestion {
     subjectId?: string;
     gradeSemester?: string;
     paperLevel?: string;
+    questionNumber?: string;
 }
 
 export type AnalyzeResponse = ParsedQuestion;
