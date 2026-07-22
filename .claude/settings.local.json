@@ -64,7 +64,9 @@
       "Bash(git diff *)",
       "mcp__web-search-prime__web_search_prime",
       "Bash(npm --version)",
-      "Bash(npx next *)"
+      "Bash(npx next *)",
+      "mcp__web-reader__webReader",
+      "WebSearch"
     ]
   }
 }

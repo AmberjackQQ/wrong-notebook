@@ -90,6 +90,84 @@ export default function AddErrorPage() {
             .catch(err => console.error("Failed to fetch config:", err));
     }, [notebookId, router]);
 
+    // Check clipboard for images on mount
+    useEffect(() => {
+        const checkClipboardForImage = async () => {
+            try {
+                // Only check clipboard on initial page load (step === "upload")
+                if (step !== "upload") return;
+
+                // Try to read from clipboard
+                if (navigator.clipboard && navigator.clipboard.read) {
+                    const clipboardItems = await navigator.clipboard.read();
+                    for (const item of clipboardItems) {
+                        for (const type of item.types) {
+                            if (type.startsWith('image/')) {
+                                const blob = await item.getType(type);
+                                const imageUrl = URL.createObjectURL(blob);
+                                frontendLogger.info('[AddError]', 'Found image in clipboard, using directly');
+
+                                // Convert to File and process
+                                const file = new File([blob], "clipboard-image.jpg", { type: "image/jpeg" });
+
+                                // Check if AI analysis is disabled
+                                if (config?.defaultUseAI === false) {
+                                    // Skip AI analysis, go directly to review page
+                                    frontendLogger.info('[AddError]', 'AI analysis disabled, skipping to review with clipboard image');
+                                    try {
+                                        setAnalysisStep('compressing');
+                                        const base64Image = await processImageFile(file);
+                                        setCurrentImage(base64Image);
+                                        setAnalysisStep('processing');
+                                        setProgress(100);
+
+                                        // Set empty parsed data for manual entry
+                                        setParsedData({
+                                            questionText: "",
+                                            answerText: "",
+                                            analysis: "",
+                                            knowledgePoints: [],
+                                            wrongAnswerText: "",
+                                            mistakeAnalysis: "",
+                                            mistakeStatus: "unknown",
+                                            subject: (notebook?.name as any) || "数学",
+                                            requiresImage: true,
+                                        });
+                                        setStep("review");
+                                    } catch (error: any) {
+                                        frontendLogger.error('[AddError]', 'Failed to process clipboard image for manual entry', {
+                                            error: error.message || String(error)
+                                        });
+                                        alert('Failed to process image. Please try again.');
+                                    } finally {
+                                        setAnalysisStep('idle');
+                                    }
+                                } else {
+                                    // Use AI analysis, call handleAnalyze
+                                    handleAnalyze(file);
+                                }
+                                return; // Exit after finding first image
+                            }
+                        }
+                    }
+                    frontendLogger.info('[AddError]', 'No image found in clipboard');
+                }
+            } catch (error) {
+                // Clipboard access denied or failed
+                frontendLogger.info('[AddError]', 'Clipboard access denied or failed', {
+                    error: error instanceof Error ? error.message : String(error)
+                });
+            }
+        };
+
+        // Check clipboard after a short delay to ensure UI is ready
+        const timeoutId = setTimeout(() => {
+            checkClipboardForImage();
+        }, 500);
+
+        return () => clearTimeout(timeoutId);
+    }, [step, config, notebook]);
+
     // Simulate progress for smoother UX with timeout protection
     useEffect(() => {
         let interval: NodeJS.Timeout;
@@ -446,7 +524,7 @@ export default function AddErrorPage() {
                         </div>
 
                         {inputMode === "image" ? (
-                            <UploadZone onImageSelect={onImageSelect} isAnalyzing={analysisStep !== 'idle'} />
+                            <UploadZone onImageSelect={onImageSelect} isAnalyzing={analysisStep !== 'idle'} showClipboardHint={true} />
                         ) : (
                             <TextInputZone
                                 onSubmit={handleTextSubmit}

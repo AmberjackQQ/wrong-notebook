@@ -21,9 +21,10 @@ declare global {
 interface UploadZoneProps {
     onImageSelect: (file: File) => void;  // 改为传递 File 对象
     isAnalyzing: boolean;
+    showClipboardHint?: boolean;  // 显示粘贴板提示
 }
 
-export function UploadZone({ onImageSelect, isAnalyzing }: UploadZoneProps) {
+export function UploadZone({ onImageSelect, isAnalyzing, showClipboardHint = false }: UploadZoneProps) {
     const { t } = useLanguage();
     const [isScreenshotting, setIsScreenshotting] = useState(false);
     const [isClient, setIsClient] = useState(false);
@@ -204,6 +205,13 @@ export function UploadZone({ onImageSelect, isAnalyzing }: UploadZoneProps) {
                         <p className="text-xs text-muted-foreground mt-2">
                             {t.upload.support}
                         </p>
+                        {showClipboardHint && (
+                            <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                                <p className="text-sm text-blue-800">
+                                    💡 提示：如果您的粘贴板中有图片，系统会自动使用
+                                </p>
+                            </div>
+                        )}
                     </div>
                 </CardContent>
             </Card>

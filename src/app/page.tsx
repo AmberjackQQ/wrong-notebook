@@ -129,6 +129,66 @@ function HomeContent() {
         setIsCropperOpen(true);
     };
 
+    // Check clipboard for images on mount
+    useEffect(() => {
+        const checkClipboardForImage = async () => {
+            try {
+                // Try to read from clipboard
+                if (navigator.clipboard && navigator.clipboard.read) {
+                    const clipboardItems = await navigator.clipboard.read();
+                    for (const item of clipboardItems) {
+                        for (const type of item.types) {
+                            if (type.startsWith('image/')) {
+                                const blob = await item.getType(type);
+                                const imageUrl = URL.createObjectURL(blob);
+                                frontendLogger.info('[Home]', 'Found image in clipboard, using directly');
+
+                                // Convert to File and process
+                                const file = new File([blob], "clipboard-image.jpg", { type: "image/jpeg" });
+
+                                // Check if AI analysis is enabled
+                                const useAI = config?.defaultUseAI ?? true;
+
+                                if (useAI) {
+                                    handleAnalyze(file);
+                                } else {
+                                    // Skip AI analysis, go directly to review
+                                    setParsedData({
+                                        questionText: "",
+                                        answerText: "",
+                                        analysis: "",
+                                        knowledgePoints: [],
+                                        wrongAnswerText: "",
+                                        mistakeAnalysis: "",
+                                        mistakeStatus: "unknown",
+                                        subject: (notebooks.find(n => n.id === (initialNotebookId || autoSelectedNotebookId))?.name as any) || "数学",
+                                        requiresImage: true,
+                                    });
+                                    setCurrentImage(await processImageFile(file));
+                                    setStep("review");
+                                }
+                                return; // Exit after finding first image
+                            }
+                        }
+                    }
+                    frontendLogger.info('[Home]', 'No image found in clipboard');
+                }
+            } catch (error) {
+                // Clipboard access denied or failed
+                frontendLogger.info('[Home]', 'Clipboard access denied or failed', {
+                    error: error instanceof Error ? error.message : String(error)
+                });
+            }
+        };
+
+        // Check clipboard after a short delay to ensure UI is ready
+        const timeoutId = setTimeout(() => {
+            checkClipboardForImage();
+        }, 500);
+
+        return () => clearTimeout(timeoutId);
+    }, [config, notebooks, initialNotebookId, autoSelectedNotebookId]);
+
     const handleCropComplete = async (croppedBlob: Blob) => {
         setIsCropperOpen(false);
         // Convert Blob to File
@@ -625,7 +685,7 @@ function HomeContent() {
                         </div>
 
                         {inputMode === "image" ? (
-                            <UploadZone onImageSelect={onImageSelect} isAnalyzing={analysisStep !== 'idle'} />
+                            <UploadZone onImageSelect={onImageSelect} isAnalyzing={analysisStep !== 'idle'} showClipboardHint={true} />
                         ) : inputMode === "text" ? (
                             <TextInputZone
                                 onSubmit={handleTextSubmit}
