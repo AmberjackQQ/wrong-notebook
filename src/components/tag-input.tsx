@@ -155,7 +155,7 @@ export function TagInput({ value = [], onChange, placeholder = "Enter tags...", 
                 >
                     {suggestions.map((suggestion, index) => (
                         <div
-                            key={suggestion}
+                            key={`${suggestion}-${index}`}
                             className={`px-3 py-2 cursor-pointer hover:bg-accent ${index === selectedIndex ? "bg-accent" : ""
                                 }`}
                             onClick={() => addTag(suggestion)}

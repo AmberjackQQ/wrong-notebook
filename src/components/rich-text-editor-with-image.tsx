@@ -1,5 +1,16 @@
 "use client";
 
+// 添加 CaptureController 类型声明
+declare global {
+  interface Window {
+    CaptureController: {
+      new(): {
+        setFocusBehavior(behavior: 'no-focus-change' | 'focus-capturing-application'): void;
+      };
+    };
+  }
+}
+
 import { useState, useRef, useEffect } from "react";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -46,6 +57,21 @@ export function RichTextEditorWithImage({
   const isSelectingAreaRef = useRef(false);
   const previewContainerRef = useRef<HTMLDivElement>(null);
 
+  // 当截图预览显示时，自动激活浏览器窗口
+  useEffect(() => {
+    if (screenshotPreview && isScreenshotting) {
+      // 由于设置了 no-focus-change，浏览器窗口应该已经在最前面
+      // 如果有问题，可以尝试温和地激活窗口
+      setTimeout(() => {
+        try {
+          window.focus();
+        } catch (e) {
+          console.warn('无法激活窗口:', e);
+        }
+      }, 100);
+    }
+  }, [screenshotPreview, isScreenshotting]);
+
   const handlePaste = (e: React.ClipboardEvent) => {
     const items = e.clipboardData.items;
     const imageFiles: File[] = [];
@@ -90,25 +116,54 @@ export function RichTextEditorWithImage({
   const startScreenshot = async () => {
     try {
       setIsScreenshotting(true);
-      console.log('📸 开始屏幕截图');
 
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: true,
-        audio: false
-      } as MediaStreamConstraints);
+      // 创建 CaptureController 来控制焦点行为
+      let controller;
+      if ('CaptureController' in window) {
+        controller = new (window as any).CaptureController();
+      }
 
-      const videoTrack = stream.getVideoTracks()[0];
+      // 请求屏幕共享权限
+      const displayMediaOptions: DisplayMediaStreamOptions & {
+        preferCurrentTab?: boolean;
+        controller?: any;
+        video?: {
+          cursor: "always" | "never" | "motion";
+        };
+      } = {
+        video: {
+          cursor: "always" as const
+        },
+        audio: false,
+      };
+
+      if (controller) {
+        (displayMediaOptions as any).controller = controller;
+      }
+
+      const stream = await navigator.mediaDevices.getDisplayMedia(displayMediaOptions);
+
+      // 获取视频轨道并检查捕获类型
+      const [videoTrack] = stream.getVideoTracks();
+      const settings = videoTrack.getSettings();
+      const displaySurface = (settings as any).displaySurface;
+
+      // 如果是标签页或窗口，设置不切换焦点
+      if (controller && (displaySurface === 'browser' || displaySurface === 'window')) {
+        try {
+          controller.setFocusBehavior('no-focus-change');
+        } catch (e) {
+          console.warn('无法设置焦点行为:', e);
+        }
+      }
 
       // 监听用户取消屏幕共享
       videoTrack.onended = () => {
-        console.log('👤 用户取消屏幕共享');
+        console.log('用户取消屏幕共享');
         resetScreenshotState();
       };
 
       setScreenshotStream(stream);
-
-      const settings = videoTrack.getSettings();
-      console.log('📹 视频设置:', settings);
 
       // 创建预览
       const video = document.createElement('video');
@@ -119,34 +174,20 @@ export function RichTextEditorWithImage({
       video.crossOrigin = "anonymous";
 
       video.onloadedmetadata = () => {
-        console.log('🎬 视频元数据加载完成');
-        console.log('📏 视频尺寸:', video.videoWidth, 'x', video.videoHeight);
-
         // 等待几帧，确保视频有数据
         setTimeout(() => {
           const canvas = document.createElement('canvas');
           canvas.width = settings.width ? settings.width : video.videoWidth;
           canvas.height = settings.height ? settings.height : video.videoHeight;
 
-          console.log('🖼️ Canvas尺寸:', canvas.width, 'x', canvas.height);
-
           const ctx = canvas.getContext('2d');
           if (ctx) {
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-            // 检查canvas内容是否正确捕获
-            try {
-              const sampleData = ctx.getImageData(0, 0, 1, 1).data;
-              console.log('🎨 Canvas样本像素:', sampleData);
-            } catch (e) {
-              console.error('❌ 无法获取Canvas数据（可能被污染）:', e);
-            }
-
             const dataUrl = canvas.toDataURL('image/png');
-            console.log('✅ 截图完成 - dataUrl长度:', dataUrl.length);
-            console.log('✅ 前50字符:', dataUrl.substring(0, 50));
 
             if (dataUrl && dataUrl.length > 1000) {
+              // 设置预览，useEffect 会自动激活窗口
               setScreenshotPreview(dataUrl);
             } else {
               console.error('❌ 截图数据无效');
@@ -178,25 +219,17 @@ export function RichTextEditorWithImage({
 
   // 确认裁剪区域 - 修复坐标映射问题
   const confirmCrop = () => {
-    console.log('🖼️ 确认裁剪 - cropArea:', cropArea);
-
     if (!cropArea || !screenshotPreview) {
       console.error('❌ 缺少必要数据');
       return;
     }
 
-    console.log('🖼️ 开始处理裁剪');
-
     const img = new Image();
     img.onload = () => {
-      console.log('📸 图片加载完成');
-      console.log('📏 原始图片尺寸:', img.naturalWidth, 'x', img.naturalHeight);
-      console.log('📏 显示图片尺寸:', img.width, 'x', img.height);
-
       // 获取图片元素的实际显示尺寸
       const imgElement = previewImageRef.current;
       if (!imgElement) {
-        console.error('❌ 无法获取图片元素');
+        console.error('无法获取图片元素');
         return;
       }
 
@@ -209,8 +242,6 @@ export function RichTextEditorWithImage({
       const scaleX = naturalWidth / displayWidth;
       const scaleY = naturalHeight / displayHeight;
 
-      console.log('🔄 缩放比例 - scaleX:', scaleX, 'scaleY:', scaleY);
-
       // 将显示坐标映射到原始图片坐标
       const scaledArea = {
         x: cropArea.x * scaleX,
@@ -219,8 +250,6 @@ export function RichTextEditorWithImage({
         height: cropArea.height * scaleY
       };
 
-      console.log('🎯 映射后的裁剪区域:', scaledArea);
-
       // 确保裁剪区域在有效范围内
       const safeArea = {
         x: Math.max(0, Math.min(Math.floor(scaledArea.x), naturalWidth)),
@@ -228,8 +257,6 @@ export function RichTextEditorWithImage({
         width: Math.max(1, Math.min(Math.floor(scaledArea.width), naturalWidth - Math.floor(scaledArea.x))),
         height: Math.max(1, Math.min(Math.floor(scaledArea.height), naturalHeight - Math.floor(scaledArea.y)))
       };
-
-      console.log('🔒 安全裁剪区域:', safeArea);
 
       const canvas = document.createElement('canvas');
       canvas.width = safeArea.width;
@@ -245,8 +272,6 @@ export function RichTextEditorWithImage({
         );
 
         const croppedDataUrl = canvas.toDataURL('image/png');
-        console.log('✅ 裁剪完成 - dataUrl长度:', croppedDataUrl.length);
-        console.log('✅ 前50字符:', croppedDataUrl.substring(0, 50));
 
         if (croppedDataUrl && croppedDataUrl.length > 1000) {
           const newImage: PastedImage = {
@@ -255,18 +280,17 @@ export function RichTextEditorWithImage({
             name: "屏幕截图"
           };
 
-          console.log('➕ 添加新图片到列表');
           setImages(prev => [...prev, newImage]);
           resetScreenshotState();
         } else {
-          console.error('❌ 裁剪结果无效');
+          console.error('裁剪结果无效');
           alert('裁剪失败，请重试');
         }
       }
     };
 
     img.onerror = () => {
-      console.error('❌ 图片加载失败');
+      console.error('图片加载失败');
       alert('图片加载失败，请重试');
     };
 
@@ -306,7 +330,6 @@ export function RichTextEditorWithImage({
 
   // React 事件处理器
   const handleImageMouseDown = (e: React.MouseEvent<HTMLImageElement>) => {
-    console.log('🖱️ React鼠标按下事件触发');
     e.preventDefault();
     e.stopPropagation();
 
@@ -314,8 +337,6 @@ export function RichTextEditorWithImage({
     const rect = imgElement.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-
-    console.log('🖱️ 鼠标按下位置 - x:', x, 'y:', y);
 
     // 更新 ref
     selectionStartRef.current = { x, y };
@@ -349,7 +370,6 @@ export function RichTextEditorWithImage({
   };
 
   const handleImageMouseUp = (e: React.MouseEvent<HTMLImageElement>) => {
-    console.log('🖱️ React鼠标抬起事件触发');
     e.preventDefault();
 
     isSelectingAreaRef.current = false;
@@ -362,14 +382,11 @@ export function RichTextEditorWithImage({
 
   // Sync with existingImages when they change from parent
   useEffect(() => {
-    console.log('🔄 RichTextEditor 接收到新的图片列表:', existingImages);
-    console.log('📊 图片数量:', existingImages?.length || 0);
     setImages(existingImages || []);
   }, [existingImages]);
 
   useEffect(() => {
     // Notify parent when images change
-    console.log('📤 RichTextEditor 通知父组件图片变化:', images);
     onChange(value, images);
   }, [images]);
 
@@ -413,8 +430,8 @@ export function RichTextEditorWithImage({
 
       {/* 屏幕截图预览和裁剪 - 固定在最顶层 */}
       {isScreenshotting && screenshotPreview && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <Card className="max-w-4xl w-full max-h-[90vh] overflow-auto p-4 space-y-3">
+        <div className="fixed inset-0 flex items-center justify-center p-4 bg-black/50 z-50">
+          <Card className="max-w-4xl w-full max-h-[90vh] overflow-auto p-4 space-y-3 shadow-2xl">
             <div className="text-sm font-medium">选择要裁剪的区域：</div>
             <div
               className="relative inline-block w-full"

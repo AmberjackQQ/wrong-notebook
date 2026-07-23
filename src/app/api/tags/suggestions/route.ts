@@ -104,8 +104,13 @@ export async function GET(req: Request) {
             );
         }
 
+        // 去重处理：确保标签名称唯一
+        const uniqueSuggestions = Array.from(
+            new Map(suggestions.map(tag => [tag.name, tag])).values()
+        );
+
         // Secondary sorting by name match position (optional) or just name
-        const finalSuggestions = suggestions
+        const finalSuggestions = uniqueSuggestions
             .slice(0, 30)
             .map(s => s.name);
 
