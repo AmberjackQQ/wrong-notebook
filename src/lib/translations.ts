@@ -113,6 +113,8 @@ export const translations = {
             mistakeStatuses: {
                 notAttempted: "Not attempted",
                 wrongAttempt: "Wrong attempt",
+                partiallyWrong: "Partially wrong",
+                notYetReady: "Not yet ready",
                 unknown: "Unknown",
                 focus: "Priority focus",
             },
@@ -767,6 +769,7 @@ export const translations = {
                 notAttempted: "不会做",
                 wrongAttempt: "做错了",
                 partiallyWrong: "部分做错",
+                notYetReady: "来不急做",
                 unknown: "未判断",
                 focus: "重点关注",
             },
