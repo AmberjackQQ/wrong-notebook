@@ -5,6 +5,12 @@ import remarkGfm from 'remark-gfm';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 
+// 配置remark-math支持单美元符号内联数学
+const mathOptions = {
+  singleDollarTextMath: true,  // 支持 $...$ 的内联数学
+  doubleDollarTextMath: true,  // 支持 $$...$$ 的块级数学
+};
+
 interface MarkdownRendererProps {
     content: string;
     className?: string;
@@ -31,16 +37,13 @@ export function MarkdownRenderer({ content, className = '' }: MarkdownRendererPr
         // Fix: Remove indentation for lines starting with circled numbers or (n) to prevent code block rendering
         .replace(/\n\s+([\u2460-\u2473])/g, '\n$1')
         .replace(/\n\s+(\d+\))/g, '\n$1')
-        // Fix LaTeX formulas: Ensure proper spacing around $ delimiters
-        // This handles cases where $ might be directly adjacent to text
-        .replace(/([^\s$])(\$[^$]+\$)([^\s$])/g, '$1 $2 $3')
         // Restore preserved double line breaks (use flexible whitespace matching)
         .replace(/\s*###PRESERVE_BREAK###\s*/g, '\n\n');
 
     return (
         <div className={`markdown-content overflow-x-auto min-w-0 ${className}`}>
             <ReactMarkdown
-                remarkPlugins={[remarkMath, remarkGfm]}
+                remarkPlugins={[[remarkMath, mathOptions], remarkGfm]}
                 rehypePlugins={[rehypeKatex]}
                 components={{
                     // 自定义样式
