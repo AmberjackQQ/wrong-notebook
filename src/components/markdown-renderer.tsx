@@ -1,15 +1,8 @@
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
-import remarkMath from 'remark-math';
 import remarkGfm from 'remark-gfm';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
-
-// 配置remark-math支持各种LaTeX格式
-const mathOptions = {
-  singleDollarTextMath: true,   // 支持 $...$ 的内联数学
-  doubleDollarTextMath: true,   // 支持 $$...$$ 的块级数学
-};
 
 interface MarkdownRendererProps {
     content: string;
@@ -30,7 +23,11 @@ export function MarkdownRenderer({ content, className = '' }: MarkdownRendererPr
         // Convert LaTeX \(...\) format to Markdown $...$ format for better compatibility
         .replace(/\\\(([^)]+)\\\)/g, '$$$1$$')
         // Convert LaTeX \[...\] format to Markdown $$...$$ format
-        .replace(/\\\[([^]]+)\\\]/g, '$$$1$$')
+        .replace(/\\\[([^]]+)\\\]/g, (match, p1) => {
+            // 处理多行块级数学公式
+            const formula = p1.trim();
+            return `\n$$${formula}\n$$\n`;
+        })
         // Preserve existing double line breaks with a unique marker
         .replace(/\n\n/g, '\n\n###PRESERVE_BREAK###\n\n')
         // Convert patterns that should be new paragraphs
@@ -45,12 +42,13 @@ export function MarkdownRenderer({ content, className = '' }: MarkdownRendererPr
         .replace(/\s*###PRESERVE_BREAK###\s*/g, '\n\n');
 
     // Debug: 测试LaTeX解析
-    console.log('🔍 Markdown content preview:', content.substring(0, 100) + '...');
+    console.log('🔍 Original content preview:', content.substring(0, 100) + '...');
+    console.log('🔍 Processed content preview:', processedContent.substring(0, 100) + '...');
 
     return (
         <div className={`markdown-content overflow-x-auto min-w-0 ${className}`}>
             <ReactMarkdown
-                remarkPlugins={[remarkMath, remarkGfm]}
+                remarkPlugins={[remarkGfm]}
                 rehypePlugins={[rehypeKatex]}
                 components={{
                     // 自定义样式
