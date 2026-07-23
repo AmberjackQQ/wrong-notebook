@@ -73,6 +73,8 @@ export const translations = {
             textInputPlaceholder: "Paste or type question text here...\nSupports Markdown and LaTeX formulas (e.g. $x^2 + y^2 = 1$)\n\nCtrl+Enter to submit",
             aiSolve: "AI Solve",
             textInputTip: "After entering the question, AI will automatically solve and generate analysis",
+            useClipboardImage: "Use Clipboard Image",
+            clipboardImagePrompt: "Detected image in clipboard. Use it for error analysis?",
         },
         wrongAnswerStats: {
             title: "Wrong Answer Statistics",
@@ -343,6 +345,7 @@ export const translations = {
             filteringByTag: "Filtering by tag",
             grade: "Grade/Semester",
             paperLevel: "Paper Level",
+            clear: "Clear",
         },
         stats: {
             title: "Practice Statistics",
@@ -728,6 +731,8 @@ export const translations = {
             textInputPlaceholder: "在此粘贴或输入题目文本...\n支持 Markdown 和 LaTeX 公式（如 $x^2 + y^2 = 1$）\n\nCtrl+Enter 快捷提交",
             aiSolve: "AI 解题",
             textInputTip: "输入题目后，AI 将自动解答并生成解析",
+            useClipboardImage: "使用剪贴板图片",
+            clipboardImagePrompt: "检测到剪贴板中有图片，是否使用该图片进行错题分析？",
         },
         wrongAnswerStats: {
             title: "错题统计",
@@ -998,6 +1003,7 @@ export const translations = {
             filteringByTag: "按标签筛选",
             grade: "年级/学期",
             paperLevel: "题目来源",
+            clear: "清除",
         },
         stats: {
             title: "练习统计",

@@ -1,7 +1,5 @@
-import React from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import rehypeKatex from 'rehype-katex';
+import React, { useMemo, useEffect, useRef } from 'react';
+import katex from 'katex';
 import 'katex/dist/katex.min.css';
 
 interface MarkdownRendererProps {
@@ -9,86 +7,130 @@ interface MarkdownRendererProps {
     className?: string;
 }
 
+// Simple inline markdown processor
+const processInlineMarkdown = (text: string): string => {
+    return text
+        // Bold **text**
+        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+        // Italic *text*
+        .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+        // Convert newlines to <br> for display (reduced spacing)
+        .replace(/\n\n+/g, '<br/><br/>')
+        .replace(/\n/g, '<br/>');
+};
+
+// Custom component for KaTeX rendering
+const KatexInline: React.FC<{ math: string }> = ({ math }) => {
+    const containerRef = useRef<HTMLSpanElement>(null);
+
+    useEffect(() => {
+        if (containerRef.current) {
+            try {
+                katex.render(math, containerRef.current, {
+                    displayMode: false,
+                    throwOnError: false,
+                    errorColor: '#cc0000',
+                });
+            } catch (error) {
+                containerRef.current.innerHTML = `<span style="color: #cc0000;">LaTeX Error</span>`;
+            }
+        }
+    }, [math]);
+
+    return <span ref={containerRef} style={{ display: 'inline-block', margin: '0 1px', verticalAlign: 'middle' }} />;
+};
+
+const KatexBlock: React.FC<{ math: string }> = ({ math }) => {
+    const containerRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (containerRef.current) {
+            try {
+                katex.render(math, containerRef.current, {
+                    displayMode: true,
+                    throwOnError: false,
+                    errorColor: '#cc0000',
+                });
+            } catch (error) {
+                containerRef.current.innerHTML = `<div style="color: #cc0000;">LaTeX Error</div>`;
+            }
+        }
+    }, [math]);
+
+    return (
+        <div ref={containerRef} style={{ textAlign: 'center', margin: '2px 0', overflowX: 'auto', overflowY: 'hidden' }} />
+    );
+};
+
 export function MarkdownRenderer({ content, className = '' }: MarkdownRendererProps) {
-    // Handle null or undefined content
+    // Process content inline: render mixed markdown and LaTeX without line breaks
+    const renderedContent = useMemo(() => {
+        if (!content) return null;
+
+        const elements: React.ReactNode[] = [];
+        let lastIndex = 0;
+
+        // Match LaTeX formulas: \(...\) for inline, \[...\] for block
+        const latexRegex = /\\\(([\s\S]*?)\\\)|\\\[([\s\S]*?)\\\]/g;
+        let match;
+
+        while ((match = latexRegex.exec(content)) !== null) {
+            // Add text before LaTeX formula
+            if (match.index > lastIndex) {
+                const textContent = content.substring(lastIndex, match.index);
+                // Process as inline markdown to avoid wrapping in <p>
+                elements.push(
+                    <span key={`text-${lastIndex}`} dangerouslySetInnerHTML={{
+                        __html: processInlineMarkdown(textContent)
+                    }} />
+                );
+            }
+
+            // Add LaTeX formula
+            if (match[1] !== undefined) {
+                elements.push(<KatexInline key={`inline-${match.index}`} math={match[1]} />);
+            } else if (match[2] !== undefined) {
+                elements.push(<KatexBlock key={`block-${match.index}`} math={match[2].trim()} />);
+            }
+
+            lastIndex = match.index + match[0].length;
+        }
+
+        // Add remaining text after last LaTeX formula
+        if (lastIndex < content.length) {
+            const textContent = content.substring(lastIndex);
+            elements.push(
+                <span key={`text-${lastIndex}`} dangerouslySetInnerHTML={{
+                    __html: processInlineMarkdown(textContent)
+                }} />
+            );
+        }
+
+        return elements;
+    }, [content]);
+
     if (!content) {
         return <div className={`markdown-content overflow-x-auto min-w-0 ${className}`}></div>;
     }
 
-    // Preprocess content to ensure proper paragraph breaks and LaTeX rendering
-    // Convert single line breaks to double line breaks for better readability
-    const processedContent = content
-        // First, convert literal \n sequences to actual newlines (fix for AI responses)
-        .replace(/\\n/g, '\n')
-        // Convert LaTeX \(...\) format to Markdown $...$ format for better compatibility
-        .replace(/\\\(([^)]+)\\\)/g, '$$$1$$')
-        // Convert LaTeX \[...\] format to Markdown $$...$$ format
-        .replace(/\\\[([^]]+)\\\]/g, (match, p1) => {
-            // 处理多行块级数学公式
-            const formula = p1.trim();
-            return `\n$$${formula}\n$$\n`;
-        })
-        // Preserve existing double line breaks with a unique marker
-        .replace(/\n\n/g, '\n\n###PRESERVE_BREAK###\n\n')
-        // Convert patterns that should be new paragraphs
-        .replace(/([。！？；])\n(?!\n)/g, '$1\n\n')  // Chinese punctuation followed by single newline
-        .replace(/([.!?;])\s*\n(?!\n)/g, '$1\n\n')   // English punctuation followed by single newline
-        .replace(/(\d+\))\s*\n(?!\n)/g, '$1\n\n')    // Numbered items like (1), (2)
-        .replace(/([\u2460-\u2473])\s*\n(?!\n)/g, '$1\n\n')  // Circled numbers ①②③
-        // Fix: Remove indentation for lines starting with circled numbers or (n) to prevent code block rendering
-        .replace(/\n\s+([\u2460-\u2473])/g, '\n$1')
-        .replace(/\n\s+(\d+\))/g, '\n$1')
-        // Restore preserved double line breaks (use flexible whitespace matching)
-        .replace(/\s*###PRESERVE_BREAK###\s*/g, '\n\n');
-
-    // Debug: 测试LaTeX解析
-    console.log('🔍 Original content preview:', content.substring(0, 100) + '...');
-    console.log('🔍 Processed content preview:', processedContent.substring(0, 100) + '...');
-
     return (
-        <div className={`markdown-content overflow-x-auto min-w-0 ${className}`}>
-            <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                rehypePlugins={[rehypeKatex]}
-                components={{
-                    // 自定义样式
-                    h1: ({ node, ...props }) => <h1 className="text-2xl font-bold mt-6 mb-4" {...props} />,
-                    h2: ({ node, ...props }) => <h2 className="text-xl font-bold mt-5 mb-3" {...props} />,
-                    h3: ({ node, ...props }) => <h3 className="text-lg font-bold mt-4 mb-2" {...props} />,
-                    p: ({ node, ...props }) => <p className="mb-3 leading-relaxed" {...props} />,
-                    ul: ({ node, ...props }) => <ul className="list-disc list-inside mb-3 space-y-1" {...props} />,
-                    ol: ({ node, ...props }) => <ol className="list-decimal list-inside mb-3 space-y-1" {...props} />,
-                    li: ({ node, ...props }) => <li className="ml-4" {...props} />,
-                    blockquote: ({ node, ...props }) => (
-                        <blockquote className="border-l-4 border-primary pl-4 italic my-4 text-muted-foreground" {...props} />
-                    ),
-                    code: ({ node, inline, className, children, ...props }: any) => {
-                        if (inline) {
-                            return <code className="bg-muted px-1.5 py-0.5 rounded text-sm font-mono text-foreground" {...props}>{children}</code>;
-                        }
-                        return (
-                            <code className="block bg-muted p-4 rounded-lg overflow-x-auto my-3 font-mono text-sm" {...props}>
-                                {children}
-                            </code>
-                        );
-                    },
-                    table: ({ node, ...props }) => (
-                        <div className="overflow-x-auto my-4">
-                            <table className="min-w-full border-collapse border border-border" {...props} />
-                        </div>
-                    ),
-                    th: ({ node, ...props }) => (
-                        <th className="border border-border px-4 py-2 bg-muted font-semibold text-left" {...props} />
-                    ),
-                    td: ({ node, ...props }) => (
-                        <td className="border border-border px-4 py-2" {...props} />
-                    ),
-                    strong: ({ node, ...props }) => <strong className="font-bold text-foreground" {...props} />,
-                    em: ({ node, ...props }) => <em className="italic" {...props} />,
-                }}
-            >
-                {processedContent}
-            </ReactMarkdown>
+        <div
+            className={`markdown-content overflow-x-auto min-w-0 ${className}`}
+            style={{
+                lineHeight: '0.8',
+                margin: '0',
+                padding: '0'
+            }}
+        >
+            <style>{`
+                .markdown-content .katex {
+                    margin: 2px 0;
+                }
+                .markdown-content .katex-display {
+                    margin: 4px 0;
+                }
+            `}</style>
+            {renderedContent}
         </div>
     );
 }

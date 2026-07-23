@@ -445,7 +445,7 @@ function PrintPreviewContent() {
 
                             {/* Answer */}
                             {showAnswers && (() => {
-                                const hasAnswerText = item.answerText?.trim().length > 0;
+                                const hasAnswerText = (item.answerText?.trim() || '').length > 0;
                                 let hasAnswerImages = false;
                                 if (item.answerImages) {
                                     try {
@@ -496,7 +496,7 @@ function PrintPreviewContent() {
 
                             {/* Analysis */}
                             {showAnalysis && (() => {
-                                const hasAnalysisText = item.analysis?.trim().length > 0;
+                                const hasAnalysisText = (item.analysis?.trim() || '').length > 0;
                                 let hasAnalysisImages = false;
                                 if (item.analysisImages) {
                                     try {

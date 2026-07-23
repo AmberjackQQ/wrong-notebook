@@ -649,7 +649,7 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
                                             </Badge>
                                             {(() => {
                                                 // 检查是否有解析内容（文本或图片）
-                                                const hasAnalysisText = item.analysis?.trim().length > 0;
+                                                const hasAnalysisText = (item.analysis?.trim() || '').length > 0;
                                                 let hasAnalysisImages = false;
                                                 if (item.analysisImages) {
                                                     try {
@@ -667,7 +667,7 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
                                             )}
                                             {(() => {
                                                 // 检查是否有答案内容（文本或图片）
-                                                const hasAnswerText = item.answerText?.trim().length > 0;
+                                                const hasAnswerText = (item.answerText?.trim() || '').length > 0;
                                                 let hasAnswerImages = false;
                                                 if (item.answerImages) {
                                                     try {
