@@ -5,10 +5,11 @@ import remarkGfm from 'remark-gfm';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 
-// 配置remark-math支持单美元符号内联数学
+// 配置remark-math支持各种LaTeX格式
 const mathOptions = {
-  singleDollarTextMath: true,  // 支持 $...$ 的内联数学
-  doubleDollarTextMath: true,  // 支持 $$...$$ 的块级数学
+  singleDollarTextMath: true,   // 支持 $...$ 的内联数学
+  doubleDollarTextMath: true,   // 支持 $$...$$ 的块级数学
+  inlineMath: [['\\(', '\\)'], ['\\[', '\\]']],  // 支持 \(...\) 和 \[...\]
 };
 
 interface MarkdownRendererProps {
