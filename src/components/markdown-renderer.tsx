@@ -9,7 +9,6 @@ import 'katex/dist/katex.min.css';
 const mathOptions = {
   singleDollarTextMath: true,   // 支持 $...$ 的内联数学
   doubleDollarTextMath: true,   // 支持 $$...$$ 的块级数学
-  inlineMath: [['\\(', '\\)'], ['\\[', '\\]']],  // 支持 \(...\) 和 \[...\]
 };
 
 interface MarkdownRendererProps {
@@ -28,6 +27,10 @@ export function MarkdownRenderer({ content, className = '' }: MarkdownRendererPr
     const processedContent = content
         // First, convert literal \n sequences to actual newlines (fix for AI responses)
         .replace(/\\n/g, '\n')
+        // Convert LaTeX \(...\) format to Markdown $...$ format for better compatibility
+        .replace(/\\\(([^)]+)\\\)/g, '$$$1$$')
+        // Convert LaTeX \[...\] format to Markdown $$...$$ format
+        .replace(/\\\[([^]]+)\\\]/g, '$$$1$$')
         // Preserve existing double line breaks with a unique marker
         .replace(/\n\n/g, '\n\n###PRESERVE_BREAK###\n\n')
         // Convert patterns that should be new paragraphs
@@ -41,10 +44,13 @@ export function MarkdownRenderer({ content, className = '' }: MarkdownRendererPr
         // Restore preserved double line breaks (use flexible whitespace matching)
         .replace(/\s*###PRESERVE_BREAK###\s*/g, '\n\n');
 
+    // Debug: 测试LaTeX解析
+    console.log('🔍 Markdown content preview:', content.substring(0, 100) + '...');
+
     return (
         <div className={`markdown-content overflow-x-auto min-w-0 ${className}`}>
             <ReactMarkdown
-                remarkPlugins={[[remarkMath, mathOptions], remarkGfm]}
+                remarkPlugins={[remarkMath, remarkGfm]}
                 rehypePlugins={[rehypeKatex]}
                 components={{
                     // 自定义样式
