@@ -117,7 +117,7 @@ export function MarkdownRenderer({ content, className = '' }: MarkdownRendererPr
         <div
             className={`markdown-content overflow-x-auto min-w-0 ${className}`}
             style={{
-                lineHeight: '0.8',
+                lineHeight: '1.0',
                 margin: '0',
                 padding: '0'
             }}
