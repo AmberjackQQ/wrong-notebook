@@ -478,6 +478,22 @@ export default function AddErrorPage() {
                 frontendLogger.info('[AddSave]', 'Duplicate submission detected, using existing record');
             }
 
+            // 将保存时使用的题目来源写入 localStorage，以便列表页使用
+            if (finalData.paperLevel) {
+                try {
+                    const filterKey = `errorListFilters_${notebookId}`;
+                    const existingFilters = localStorage.getItem(filterKey);
+                    const filters = existingFilters ? JSON.parse(existingFilters) : {};
+                    filters.paperLevelFilter = finalData.paperLevel;
+                    localStorage.setItem(filterKey, JSON.stringify(filters));
+                    frontendLogger.info('[AddSave]', 'Updated paper level filter in localStorage', {
+                        paperLevel: finalData.paperLevel
+                    });
+                } catch (error) {
+                    console.error('Failed to save paper level to localStorage:', error);
+                }
+            }
+
             router.push(`/notebooks/${notebookId}`);
         } catch (error) {
             console.error(error);
