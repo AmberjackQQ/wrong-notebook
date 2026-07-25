@@ -56,10 +56,12 @@ dist-scripts
 /playwright/.cache/
 
 # Local Database
-#*.db
-#*.db-journal
-#*.sqlite
-#*.sqlite-journal
+*.db
+*.db-journal
+*.sqlite
+*.sqlite-journal
+/prisma/dev.db
+/prisma/dev.db-journal
 
 # Logs & Output
 *.log
