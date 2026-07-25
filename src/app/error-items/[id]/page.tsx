@@ -32,6 +32,7 @@ import { NotebookSelector } from "@/components/notebook-selector";
 import { GeogebraDemo } from "@/components/geogebra-demo";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { RichTextEditorWithImage } from "@/components/rich-text-editor-with-image";
+import { QRCodeDisplay } from "@/components/qr-code-display";
 
 interface KnowledgeTag {
     id: string;
@@ -1406,6 +1407,12 @@ export default function ErrorDetailPage() {
                             </Button>
                         </Link>
                         <h1 className="text-2xl font-bold">{t.detail.title}</h1>
+                        <QRCodeDisplay
+                            errorItemId={item.id}
+                            size={64}
+                            showLabel={false}
+                            className="ml-2"
+                        />
                     </div>
 
                     <div className="flex gap-2">

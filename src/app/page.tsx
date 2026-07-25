@@ -13,7 +13,7 @@ import { AnalyzeResponse, Notebook, AppConfig } from "@/types/api";
 import { Button } from "@/components/ui/button";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { processImageFile } from "@/lib/image-utils";
-import { Upload, BookOpen, Tags, LogOut, BarChart3, PenLine } from "lucide-react";
+import { Upload, BookOpen, Tags, LogOut, BarChart3, PenLine, QrCode } from "lucide-react";
 import { SettingsDialog } from "@/components/settings-dialog";
 import { BroadcastNotification } from "@/components/broadcast-notification";
 import { signOut } from "next-auth/react";
@@ -29,6 +29,7 @@ import { ProgressFeedback, ProgressStatus } from "@/components/ui/progress-feedb
 import { frontendLogger } from "@/lib/frontend-logger";
 import { TextInputZone } from "@/components/text-input-zone";
 import { DirectTextEditor } from "@/components/direct-text-editor";
+import { QRCodeScanner } from "@/components/qr-code-scanner";
 
 function HomeContent() {
     const [step, setStep] = useState<"upload" | "review">("upload");
@@ -52,6 +53,9 @@ function HomeContent() {
     // Clipboard image detection state
     const [clipboardImage, setClipboardImage] = useState<File | null>(null);
     const [showClipboardDialog, setShowClipboardDialog] = useState(false);
+
+    // QR code scanner state
+    const [showQRScanner, setShowQRScanner] = useState(false);
 
     // Cropper state
     const [croppingImage, setCroppingImage] = useState<string | null>(null);
@@ -222,6 +226,12 @@ function HomeContent() {
         frontendLogger.info('[Home]', 'User rejected clipboard image');
         setShowClipboardDialog(false);
         setClipboardImage(null);
+    };
+
+    const handleQRScanSuccess = (path: string) => {
+        frontendLogger.info('[Home]', 'QR code scanned successfully', { path });
+        setShowQRScanner(false);
+        router.push(path);
     };
 
     const handleCropComplete = async (croppedBlob: Blob) => {
@@ -622,6 +632,14 @@ function HomeContent() {
                 </DialogContent>
             </Dialog>
 
+            {/* QR Code Scanner */}
+            {showQRScanner && (
+                <QRCodeScanner
+                    onScanSuccess={handleQRScanSuccess}
+                    onClose={() => setShowQRScanner(false)}
+                />
+            )}
+
             <div className="container mx-auto p-4 space-y-8 pb-20">
                 {/* Header Section */}
                 <div className="flex justify-between items-start gap-4">
@@ -696,6 +714,18 @@ function HomeContent() {
                                     </div>
                                 </Button>
                             </Link>
+
+                            <Button
+                                variant="outline"
+                                size="lg"
+                                className="w-full h-auto py-4 text-base shadow-sm hover:shadow-md transition-all border hover:border-primary/50 hover:bg-accent/50"
+                                onClick={() => setShowQRScanner(true)}
+                            >
+                                <div className="flex items-center gap-2">
+                                    <QrCode className="h-5 w-5" />
+                                    <span>扫描二维码找题</span>
+                                </div>
+                            </Button>
                         </>
                     )}
                 </div>

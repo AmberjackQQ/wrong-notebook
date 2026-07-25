@@ -16,6 +16,7 @@ import {
     shouldReserveAnswerSpace,
 } from "@/lib/print-preview";
 import { ArrowUpDown, ChevronDown, ChevronUp } from "lucide-react";
+import { QRCodeDisplay } from "@/components/qr-code-display";
 
 function PrintPreviewContent() {
     const searchParams = useSearchParams();
@@ -34,6 +35,7 @@ function PrintPreviewContent() {
     const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
     const [showQuestionHeader, setShowQuestionHeader] = useState(true);
     const [isSelectionBoxCollapsed, setIsSelectionBoxCollapsed] = useState(false);
+    const [showQRCodes, setShowQRCodes] = useState(false);
 
     useEffect(() => {
         fetchItems();
@@ -265,6 +267,15 @@ function PrintPreviewContent() {
                                 />
                                 {t.printPreview?.showTags || 'Show Tags'}
                             </label>
+                            <label className="flex items-center gap-1.5 text-xs sm:text-sm cursor-pointer whitespace-nowrap hover:text-primary transition-colors">
+                                <input
+                                    type="checkbox"
+                                    checked={showQRCodes}
+                                    onChange={(e) => setShowQRCodes(e.target.checked)}
+                                    className="rounded border-gray-300 text-primary focus:ring-primary w-3.5 h-3.5 sm:w-4 sm:h-4"
+                                />
+                                显示题目定位二维码
+                            </label>
                         </div>
                     </div>
 
@@ -350,6 +361,16 @@ function PrintPreviewContent() {
                                     <span className="text-lg font-bold">
                                         {t.printPreview?.questionNumber?.replace('{num}', String(questionNumber)) || `Question ${questionNumber}`}
                                     </span>
+                                    {showQRCodes && (
+                                        <div className="print:flex print:items-center">
+                                            <QRCodeDisplay
+                                                errorItemId={item.id}
+                                                size={48}
+                                                showLabel={false}
+                                                className="print:scale-75 print:origin-left"
+                                            />
+                                        </div>
+                                    )}
                                     {item.subject && (
                                         <span className="text-sm text-muted-foreground">
                                             {item.subject.name}
