@@ -67,7 +67,7 @@ dist-scripts
 !db-backups/*.gz
 
 # Claude Code local settings
-.claude/settings.local.json
+.claude/
 
 # Logs & Output
 *.log
