@@ -1,7 +1,7 @@
-export type MistakeStatus = 'not_attempted' | 'wrong_attempt' | 'partially_wrong' | 'not_yet_ready' | 'unknown' | 'focus';
+export type MistakeStatus = 'not_attempted' | 'wrong_attempt' | 'partially_wrong' | 'not_yet_ready' | 'unknown' | 'focus' | 'small_mistake' | 'new_method';
 
 export function normalizeMistakeStatus(status?: unknown): MistakeStatus {
-    if (status === 'not_attempted' || status === 'wrong_attempt' || status === 'partially_wrong' || status === 'not_yet_ready' || status === 'unknown' || status === 'focus') {
+    if (status === 'not_attempted' || status === 'wrong_attempt' || status === 'partially_wrong' || status === 'not_yet_ready' || status === 'unknown' || status === 'focus' || status === 'small_mistake' || status === 'new_method') {
         return status;
     }
     return 'unknown';
@@ -28,6 +28,8 @@ export function getMistakeStatusLabel(status?: string | null, language: 'zh' | '
             not_yet_ready: 'Not yet ready',
             unknown: 'Unknown',
             focus: 'Priority focus',
+            small_mistake: 'Small mistake',
+            new_method: 'New method',
         }
         : {
             not_attempted: '不会做',
@@ -36,6 +38,8 @@ export function getMistakeStatusLabel(status?: string | null, language: 'zh' | '
             not_yet_ready: '来不急做',
             unknown: '未判断',
             focus: '重点关注',
+            small_mistake: '小错误',
+            new_method: '新方法',
         };
 
     return labels[normalized];

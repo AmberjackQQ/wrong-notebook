@@ -33,6 +33,7 @@ interface ParsedQuestionWithSubject extends ParsedQuestion {
     geogebraCommands?: string;
     answerImages?: string; // JSON string of answer images
     analysisImages?: string; // JSON string of analysis images
+    answerTime?: string; // ISO string of when the answer was completed
 }
 
 interface CorrectionEditorProps {
@@ -42,6 +43,7 @@ interface CorrectionEditorProps {
     imagePreview?: string | null;
     initialSubjectId?: string;
     initialPaperLevel?: string;
+    initialGradeSemester?: string;
     aiTimeout?: number;
 }
 
@@ -52,16 +54,28 @@ type ReanswerErrorMessages = {
     responseError?: string;
 };
 
-export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, initialSubjectId, initialPaperLevel, aiTimeout }: CorrectionEditorProps) {
+export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, initialSubjectId, initialPaperLevel, initialGradeSemester, aiTimeout }: CorrectionEditorProps) {
+    // Get current time in ISO format for default answer time
+    const getCurrentTime = () => new Date().toISOString();
+
     const [data, setData] = useState<ParsedQuestionWithSubject>({
         ...initialData,
         wrongAnswerText: initialData.wrongAnswerText || "",
         mistakeAnalysis: initialData.mistakeAnalysis || "",
         mistakeStatus: initialData.mistakeStatus || "unknown",
         subjectId: initialSubjectId,
-        gradeSemester: "",
+        gradeSemester: initialGradeSemester || "",
         paperLevel: initialPaperLevel || "模拟考试",
-        questionNumber: ""
+        questionNumber: "",
+        answerTime: getCurrentTime()
+    });
+
+    // Debug: log initial data setup
+    frontendLogger.info('[CorrectionEditor]', 'Initial state setup', {
+        initialPaperLevel,
+        initialGradeSemester,
+        paperLevelInState: initialPaperLevel || "模拟考试",
+        gradeSemesterInState: initialGradeSemester || ""
     });
     const { t, language } = useLanguage();
     const [isReanswering, setIsReanswering] = useState(false);
@@ -71,6 +85,8 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
     const [newSourceName, setNewSourceName] = useState("");
     const [isAddingSource, setIsAddingSource] = useState(false);
     const [sourcePopoverOpen, setSourcePopoverOpen] = useState(false);
+    const [hasInitializedPaperLevel, setHasInitializedPaperLevel] = useState(false);
+    const [hasInitializedGradeSemester, setHasInitializedGradeSemester] = useState(false);
 
     // 图片状态管理
     const [answerImages, setAnswerImages] = useState<Array<{ id: string; dataUrl: string; name: string }>>([]);
@@ -87,8 +103,18 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
         // Log pre-set paper level if provided
         if (initialPaperLevel) {
             frontendLogger.info('[CorrectionEditor]', 'Using pre-set paper level from list filters', {
-                paperLevel: initialPaperLevel
+                initialPaperLevel: initialPaperLevel
             });
+        }
+
+        // Log pre-set grade semester if provided
+        if (initialGradeSemester) {
+            frontendLogger.info('[CorrectionEditor]', 'Using pre-set grade semester from last submission', {
+                initialGradeSemester: initialGradeSemester,
+                willSetAs: initialGradeSemester
+            });
+        } else {
+            frontendLogger.info('[CorrectionEditor]', 'No initial grade semester provided, will calculate from user profile');
         }
 
         // Fetch notebooks for mapping
@@ -113,12 +139,49 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
             .then(user => {
                 if (user && user.educationStage && user.enrollmentYear) {
                     const grade = calculateGrade(user.educationStage, user.enrollmentYear, new Date(), language);
-                    setData(prev => ({ ...prev, gradeSemester: grade }));
+                    // Only auto-set gradeSemester if it's currently empty
+                    setData(prev => {
+                        if (!prev.gradeSemester || prev.gradeSemester.trim() === "") {
+                            frontendLogger.info('[CorrectionEditor]', 'Auto-calculating grade from user profile', {
+                                calculatedGrade: grade
+                            });
+                            return { ...prev, gradeSemester: grade };
+                        }
+                        frontendLogger.info('[CorrectionEditor]', 'Keeping existing gradeSemester, skipping auto-calculation', {
+                            existingGrade: prev.gradeSemester,
+                            calculatedGrade: grade
+                        });
+                        return prev;
+                    });
                     setEducationStage(user.educationStage);
                 }
             })
             .catch(err => console.error("Failed to fetch user info for grade calculation:", err));
-    }, [language, initialPaperLevel]);
+    }, [language, initialPaperLevel, initialGradeSemester]);
+
+    // Update paperLevel when initialPaperLevel becomes available (after localStorage loads)
+    useEffect(() => {
+        if (initialPaperLevel && !hasInitializedPaperLevel) {
+            frontendLogger.info('[CorrectionEditor]', 'Initializing paperLevel from initialPaperLevel', {
+                initialPaperLevel,
+                currentValue: data.paperLevel
+            });
+            setData(prev => ({ ...prev, paperLevel: initialPaperLevel }));
+            setHasInitializedPaperLevel(true);
+        }
+    }, [initialPaperLevel, hasInitializedPaperLevel]);
+
+    // Update gradeSemester when initialGradeSemester becomes available (after localStorage loads)
+    useEffect(() => {
+        if (initialGradeSemester && !hasInitializedGradeSemester) {
+            frontendLogger.info('[CorrectionEditor]', 'Initializing gradeSemester from initialGradeSemester', {
+                initialGradeSemester,
+                currentValue: data.gradeSemester
+            });
+            setData(prev => ({ ...prev, gradeSemester: initialGradeSemester }));
+            setHasInitializedGradeSemester(true);
+        }
+    }, [initialGradeSemester, hasInitializedGradeSemester]);
 
     // 重新解题函数
     const handleReanswer = async () => {
@@ -532,6 +595,27 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
                     </div>
 
                     <div className="space-y-2">
+                        <Label>做题时间</Label>
+                        <Input
+                            type="datetime-local"
+                            value={data.answerTime ? new Date(data.answerTime).toISOString().slice(0, 16) : ''}
+                            onChange={(e) => {
+                                const dateTimeStr = e.target.value;
+                                if (dateTimeStr) {
+                                    // Convert to ISO format
+                                    const date = new Date(dateTimeStr);
+                                    setData({ ...data, answerTime: date.toISOString() });
+                                } else {
+                                    setData({ ...data, answerTime: new Date().toISOString() });
+                                }
+                            }}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                            设置做题时间，默认为当前导入时间
+                        </p>
+                    </div>
+
+                    <div className="space-y-2">
                         <Label>{t.editor.analysis}</Label>
                         <RichTextEditorWithImage
                             value={data.analysis}
@@ -563,6 +647,8 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
                                         <SelectItem value="not_attempted">{t.editor.mistakeStatuses?.notAttempted || "不会做"}</SelectItem>
                                         <SelectItem value="wrong_attempt">{t.editor.mistakeStatuses?.wrongAttempt || "做错了"}</SelectItem>
                                         <SelectItem value="partially_wrong">{t.editor.mistakeStatuses?.partiallyWrong || "部分做错"}</SelectItem>
+                                        <SelectItem value="small_mistake">{t.editor.mistakeStatuses?.smallMistake || "小错误"}</SelectItem>
+                                        <SelectItem value="new_method">{t.editor.mistakeStatuses?.newMethod || "新方法"}</SelectItem>
                                         <SelectItem value="unknown">{t.editor.mistakeStatuses?.unknown || "未判断"}</SelectItem>
                                         <SelectItem value="focus">{t.editor.mistakeStatuses?.focus || "重点关注"}</SelectItem>
                                     </SelectContent>
@@ -707,11 +793,15 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
                                     ? (t.editor.mistakeStatuses?.wrongAttempt || "做错了")
                                     : data.mistakeStatus === 'partially_wrong'
                                         ? (t.editor.mistakeStatuses?.partiallyWrong || "部分做错")
-                                        : data.mistakeStatus === 'not_attempted'
-                                            ? (t.editor.mistakeStatuses?.notAttempted || "不会做")
-                                            : data.mistakeStatus === 'focus'
-                                                ? (t.editor.mistakeStatuses?.focus || "重点关注")
-                                                : (t.editor.mistakeStatuses?.unknown || "未判断")}
+                                        : data.mistakeStatus === 'small_mistake'
+                                            ? (t.editor.mistakeStatuses?.smallMistake || "小错误")
+                                            : data.mistakeStatus === 'new_method'
+                                                ? (t.editor.mistakeStatuses?.newMethod || "新方法")
+                                                : data.mistakeStatus === 'not_attempted'
+                                                    ? (t.editor.mistakeStatuses?.notAttempted || "不会做")
+                                                    : data.mistakeStatus === 'focus'
+                                                        ? (t.editor.mistakeStatuses?.focus || "重点关注")
+                                                        : (t.editor.mistakeStatuses?.unknown || "未判断")}
                             </div>
                             {data.wrongAnswerText && (
                                 <div>

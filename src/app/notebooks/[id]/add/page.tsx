@@ -38,6 +38,7 @@ export default function AddErrorPage() {
     const [notebook, setNotebook] = useState<Notebook | null>(null);
     const [config, setConfig] = useState<AppConfig | null>(null);
     const [initialPaperLevel, setInitialPaperLevel] = useState<string | undefined>(undefined);
+    const [initialGradeSemester, setInitialGradeSemester] = useState<string | undefined>(undefined);
 
     // Input mode: "image" for photo upload, "text" for manual text input
     const [inputMode, setInputMode] = useState<"image" | "text">("image");
@@ -64,7 +65,7 @@ export default function AddErrorPage() {
     }, [croppingImage]);
 
     useEffect(() => {
-        // Load initial paper level from localStorage
+        // Load initial paper level from localStorage (list filter)
         try {
             const filterKey = `errorListFilters_${notebookId}`;
             const storedFilters = localStorage.getItem(filterKey);
@@ -72,13 +73,36 @@ export default function AddErrorPage() {
                 const filters = JSON.parse(storedFilters);
                 if (filters.paperLevelFilter && filters.paperLevelFilter !== 'all') {
                     setInitialPaperLevel(filters.paperLevelFilter);
-                    frontendLogger.info('[AddError]', 'Loaded initial paper level from filters', {
+                    frontendLogger.info('[AddError]', 'Loaded initial paper level from list filters', {
                         paperLevel: filters.paperLevelFilter
                     });
                 }
             }
         } catch (error) {
             console.error('Failed to load paper level from localStorage:', error);
+        }
+
+        // Load initial grade semester from last successful submission
+        try {
+            const lastUsedKey = `lastUsedGradeSemester_${notebookId}`;
+            const lastUsed = localStorage.getItem(lastUsedKey);
+            // Debug: log all localStorage keys related to this notebook
+            const allKeys = Object.keys(localStorage).filter(k => k.includes(notebookId));
+            frontendLogger.info('[AddError]', 'LocalStorage keys for this notebook', {
+                keys: allKeys,
+                lastUsedKey,
+                lastUsedValue: lastUsed
+            });
+            if (lastUsed) {
+                setInitialGradeSemester(lastUsed);
+                frontendLogger.info('[AddError]', 'Loaded initial grade semester from last submission', {
+                    gradeSemester: lastUsed
+                });
+            } else {
+                frontendLogger.info('[AddError]', 'No last used grade semester found in localStorage');
+            }
+        } catch (error) {
+            console.error('Failed to load last used grade semester from localStorage:', error);
         }
 
         // Fetch notebook info
@@ -467,6 +491,12 @@ export default function AddErrorPage() {
 
     const handleSave = async (finalData: ParsedQuestion & { subjectId?: string; gradeSemester?: string; paperLevel?: string; questionNumber?: string }): Promise<void> => {
         try {
+            // Debug: log the values being saved
+            frontendLogger.info('[AddSave]', 'About to save error item', {
+                gradeSemester: finalData.gradeSemester,
+                paperLevel: finalData.paperLevel
+            });
+
             const result = await apiClient.post<{ id: string; duplicate?: boolean }>("/api/error-items", {
                 ...finalData,
                 originalImageUrl: currentImage || "",
@@ -478,7 +508,7 @@ export default function AddErrorPage() {
                 frontendLogger.info('[AddSave]', 'Duplicate submission detected, using existing record');
             }
 
-            // 将保存时使用的题目来源写入 localStorage，以便列表页使用
+            // 保存题目来源到 localStorage，供列表页过滤器使用
             if (finalData.paperLevel) {
                 try {
                     const filterKey = `errorListFilters_${notebookId}`;
@@ -491,6 +521,20 @@ export default function AddErrorPage() {
                     });
                 } catch (error) {
                     console.error('Failed to save paper level to localStorage:', error);
+                }
+            }
+
+            // 将保存时使用的年级学期保存到 localStorage，供下次添加时使用
+            if (finalData.gradeSemester) {
+                try {
+                    const lastUsedKey = `lastUsedGradeSemester_${notebookId}`;
+                    localStorage.setItem(lastUsedKey, finalData.gradeSemester);
+                    frontendLogger.info('[AddSave]', 'Saved last used grade semester to localStorage', {
+                        lastUsedKey,
+                        gradeSemester: finalData.gradeSemester
+                    });
+                } catch (error) {
+                    console.error('Failed to save last used grade semester to localStorage:', error);
                 }
             }
 
@@ -587,6 +631,7 @@ export default function AddErrorPage() {
                         onCancel={() => setStep("upload")}
                         initialSubjectId={notebookId}
                         initialPaperLevel={initialPaperLevel}
+                        initialGradeSemester={initialGradeSemester}
                         aiTimeout={aiTimeout}
                     />
                 )}

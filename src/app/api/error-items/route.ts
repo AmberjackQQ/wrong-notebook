@@ -34,6 +34,7 @@ export async function POST(req: Request) {
             geogebraCommands,
             answerImages,
             analysisImages,
+            answerTime,
         } = body;
 
         // 记录请求参数（不记录完整图片数据）
@@ -52,6 +53,7 @@ export async function POST(req: Request) {
             gradeSemester,
             paperLevel,
             hasGeogebraCommands: !!geogebraCommands,
+            answerTime: answerTime ? new Date(answerTime).toISOString() : null,
         }, 'Request parameters received');
 
         // 查找用户
@@ -180,6 +182,7 @@ export async function POST(req: Request) {
                     geogebraCommands: geogebraCommands || null,
                     answerImages: answerImages || null,
                     analysisImages: analysisImages || null,
+                    answerTime: answerTime ? new Date(answerTime) : null,
                     masteryLevel: 0,
                     tags: {
                         connect: tagConnections,
