@@ -63,8 +63,8 @@ dist-scripts
 /prisma/dev.db
 /prisma/dev.db-journal
 
-# Exception: Allow compressed database backups
-!db-backups/*.gz
+# Database backups (use WPS Cloud Drive instead)
+db-backups/*.gz
 
 # Claude Code local settings
 .claude/
