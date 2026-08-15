@@ -1,0 +1,20 @@
+version: '3'
+
+services:
+  wrong-notebook:
+    image: wrong-notebook:latest
+    container_name: wrong-notebook
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      # 配置生产环境的域名（使用HTTP，因为CloudFlare到源服务器是HTTP）
+      - NEXTAUTH_URL=http://www.a1a1.icu
+      - NEXTAUTH_SECRET=your_secret_key
+      # 启用HTTPS支持
+      - HTTPS_ENABLED=false
+    volumes:
+      # Persist the SQLite database
+      - ./data:/app/data
+      - ./config:/app/config
+

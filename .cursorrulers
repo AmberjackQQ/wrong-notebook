@@ -1,0 +1,38 @@
+# 项目规则 (Project Rules)
+
+## 语言规则
+- 所有输出使用**简体中文**（回复、思考、artifact、代码注释、commit message）
+
+## Git 规则
+- 🚫 **严禁自动提交**：必须用户确认后才能执行 `git add/commit`
+- 提交前展示 `git status` 和 `git diff`
+- 格式：`<type>: <中文描述>`（feat/fix/docs/style/refactor/test/chore/ci）
+- 🚫 禁止 AI 署名（No Claude/AI attribution）
+
+## 代码风格
+- **TypeScript**：避免 `any`，使用 `unknown` 或具体类型；使用 `import type`
+- **React**：组件文件 PascalCase，Props 必须有类型，>200 行需拆分
+- **导入顺序**：React/Next → 第三方 → @/components → @/lib → types → styles
+
+## 安全规则
+- 敏感信息存 `.env`，禁止硬编码
+- 使用 Prisma 参数化查询防 SQL 注入
+- 验证所有用户输入，过滤 XSS
+
+## 错误处理
+- API 错误使用 `@/lib/api-errors`
+- 日志使用项目封装：后端 `@/lib/logger`，前端 `@/lib/frontend-logger`
+
+## 国际化 (i18n)
+- 翻译定义在 `@/lib/translations.ts`
+- UI 文本使用 `t.section.key`，Fallback 用英文
+
+## 响应式设计
+- 必须同时支持 PC 和移动端（Mobile-first）
+
+## 测试规则
+- 代码编辑完成后（无错误），基于变更自动运行测试
+- 默认：`npm run test:unit && npm run test:integration`
+- 跳过：.md/.css/.env.example 等非逻辑文件，或仅注释/格式化
+- 失败时自动修复并重跑
+- 禁止自动 `npm run build`（除非用户明确要求）
