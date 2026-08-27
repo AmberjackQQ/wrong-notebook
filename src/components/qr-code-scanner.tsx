@@ -1,9 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Html5Qrcode,
-  Html5QrcodeError,
 } from "html5-qrcode";
 import { Button } from "@/components/ui/button";
 import { X, Camera, Upload } from "lucide-react";
@@ -20,6 +19,7 @@ interface QRCodeScannerProps {
  */
 export function QRCodeScanner({ onScanSuccess, onClose }: QRCodeScannerProps) {
   const scannerRef = useRef<Html5Qrcode | null>(null);
+  const fileScannerRef = useRef<Html5Qrcode | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uploadMode, setUploadMode] = useState(false);
@@ -34,6 +34,20 @@ export function QRCodeScanner({ onScanSuccess, onClose }: QRCodeScannerProps) {
       }
     };
   }, []);
+
+  /**
+   * Handle successful scan
+   */
+  const handleScanSuccess = (decodedText: string) => {
+    // Validate the scanned path
+    if (isValidErrorItemPath(decodedText)) {
+      onScanSuccess(decodedText);
+      stopScanning();
+      onClose();
+    } else {
+      setError("无效的题目二维码，请确保扫描的是错题本题目二维码");
+    }
+  };
 
   /**
    * Start camera scanning
@@ -79,42 +93,31 @@ export function QRCodeScanner({ onScanSuccess, onClose }: QRCodeScannerProps) {
   /**
    * Handle file upload for QR code scanning
    */
-  const handleFileUpload = useCallback(
-    async (event: React.ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files?.[0];
-      if (!file) return;
+  const handleFileUpload = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
 
-      setError(null);
+    setError(null);
 
-      try {
-        const html5QrCode = new Html5Qrcode("qr-reader");
-        const qrCodeMessage = await html5QrCode.scanFile(file, true);
-
-        handleScanSuccess(qrCodeMessage);
-      } catch (err) {
-        const errorMessage =
-          err instanceof Error ? err.message : "Unknown error";
-        setError("无法识别图片中的二维码: " + errorMessage);
+    try {
+      // Must be created against the hidden qr-file-reader element,
+      // which only exists in upload mode
+      if (!fileScannerRef.current) {
+        fileScannerRef.current = new Html5Qrcode("qr-file-reader");
       }
+      const qrCodeMessage = await fileScannerRef.current.scanFile(file, true);
 
-      // Reset input
-      event.target.value = "";
-    },
-    []
-  );
-
-  /**
-   * Handle successful scan
-   */
-  const handleScanSuccess = (decodedText: string) => {
-    // Validate the scanned path
-    if (isValidErrorItemPath(decodedText)) {
-      onScanSuccess(decodedText);
-      stopScanning();
-      onClose();
-    } else {
-      setError("无效的题目二维码，请确保扫描的是错题本题目二维码");
+      handleScanSuccess(qrCodeMessage);
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : String(err ?? "Unknown error");
+      setError("无法识别图片中的二维码: " + errorMessage);
     }
+
+    // Reset input
+    event.target.value = "";
   };
 
   /**
@@ -157,6 +160,8 @@ export function QRCodeScanner({ onScanSuccess, onClose }: QRCodeScannerProps) {
               className="hidden"
               id="qr-upload"
             />
+            {/* Hidden decoder element required by scanFile in upload mode */}
+            <div id="qr-file-reader" className="hidden" />
             <label htmlFor="qr-upload">
               <Button asChild>
                 <span>选择图片</span>

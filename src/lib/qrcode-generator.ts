@@ -27,5 +27,6 @@ export function getFullQRCodeURL(path: string): string {
  * @returns True if valid
  */
 export function isValidErrorItemPath(path: string): boolean {
-  return /^\/error-items\/[a-z0-9]{24}$/.test(path);
+  // Prisma cuid() ids are 25 chars (cuid v1); cuid v2 is 24 chars
+  return /^\/error-items\/[a-z0-9]{24,25}$/.test(path);
 }
