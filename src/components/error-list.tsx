@@ -214,18 +214,11 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
     };
 
     const handleFilterChange = ({ gradeSemester, chapter, tags }: KnowledgeFilterChange) => {
-        if (gradeSemester !== undefined) setGradeFilter(gradeSemester);
-        if (chapter !== undefined) setChapterFilter(chapter);
+        // KnowledgeFilter 总是同时传递三个字段；undefined 表示"全部/未设置"
+        setGradeFilter(gradeSemester ?? "");
+        setChapterFilter(chapter ?? "");
         if (tags !== undefined) setSelectedTags(tags);
 
-        // Clear dependent filters and reset page
-        if (!gradeSemester) {
-            setGradeFilter("");
-            setChapterFilter("");
-            setSelectedTags([]);
-        } else if (!chapter) {
-            setChapterFilter("");
-        }
         setPage(1); // 筛选变化时重置页码
     };
 
@@ -680,7 +673,7 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
                                                 return hasAnswerText || hasAnswerImages;
                                             })() && (
                                                 <Badge variant="outline" className="text-xs bg-green-50 border-green-200 text-green-700">
-                                                    做题答案
+                                                    答题一
                                                 </Badge>
                                             )}
                                         </div>

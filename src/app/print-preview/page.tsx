@@ -15,6 +15,12 @@ import {
     getSelectedPrintItems,
     shouldReserveAnswerSpace,
 } from "@/lib/print-preview";
+import {
+    PRINT_CHUNK_MIN_HEIGHT_PX,
+    PRINT_PAGE_CONTENT_WIDTH_PX,
+    estimatePageCount,
+    getFooterTops,
+} from "@/lib/print-page";
 import { ArrowUpDown, ChevronDown, ChevronUp } from "lucide-react";
 import { QRCodeDisplay } from "@/components/qr-code-display";
 
@@ -36,6 +42,12 @@ function PrintPreviewContent() {
     const [showQuestionHeader, setShowQuestionHeader] = useState(true);
     const [isSelectionBoxCollapsed, setIsSelectionBoxCollapsed] = useState(false);
     const [showQRCodes, setShowQRCodes] = useState(false);
+    // 图片自动缩放至打印页宽（默认开启）
+    const [fitImagesToPage, setFitImagesToPage] = useState(true);
+    // 每个打印块（题干/答案）在打印页宽下的高度与页数估算，key 为 `${itemId}:stem` | `${itemId}:answer`
+    const [chunkPages, setChunkPages] = useState<Record<string, { pages: number; height: number }>>({});
+    // 解析图片的自然宽度（onLoad 时记录），用于按图片大小决定缩放
+    const [analysisNaturalWidths, setAnalysisNaturalWidths] = useState<Record<string, number>>({});
 
     useEffect(() => {
         fetchItems();
@@ -59,18 +71,7 @@ function PrintPreviewContent() {
             params.set("sortOrder", order);
             const response = await apiClient.get<PaginatedResponse<ErrorItem>>(`/api/error-items/list?${params.toString()}`);
             setItems(response.items);
-
-            // 检查URL参数中是否有指定的selectedIds
-            const selectedIdsParam = searchParams.get("selectedIds");
-            if (selectedIdsParam) {
-                const ids = selectedIdsParam.split(",");
-                // 验证这些ID是否都在当前items中
-                const validIds = ids.filter(id => response.items.some(item => item.id === id));
-                setSelectedIds(new Set(validIds));
-            } else {
-                // 如果没有指定selectedIds，默认全选
-                setSelectedIds(new Set(response.items.map((item) => item.id)));
-            }
+            // 保留用户当前勾选，不重置（渲染时会通过 getSelectedPrintItems 与 items 取交集）
         } catch (error) {
             console.error(error);
         } finally {
@@ -112,16 +113,98 @@ function PrintPreviewContent() {
         window.print();
     };
 
+    // 测量各打印块在打印页宽下的高度，估算每题占用的页数（用于页码脚标）
+    useEffect(() => {
+        if (loading) return;
+        let cancelled = false;
+        const waitImage = (img: HTMLImageElement) =>
+            img.complete
+                ? Promise.resolve()
+                : new Promise<void>((resolve) => {
+                      img.onload = () => resolve();
+                      img.onerror = () => resolve();
+                  });
+        const measure = async () => {
+            const imgs = Array.from(document.querySelectorAll<HTMLImageElement>(".max-w-4xl img"));
+            await Promise.all(imgs.map(waitImage));
+            await new Promise((resolve) => requestAnimationFrame(resolve));
+            if (cancelled) return;
+            const chunks = Array.from(document.querySelectorAll<HTMLElement>("[data-print-chunk]"));
+            if (chunks.length === 0) {
+                setChunkPages({});
+                return;
+            }
+            // 屏幕预览宽度与打印页宽不同，用屏外克隆按打印页宽测量
+            const host = document.createElement("div");
+            host.style.cssText = `position:absolute;left:-10000px;top:0;width:${PRINT_PAGE_CONTENT_WIDTH_PX}px;visibility:hidden;`;
+            document.body.appendChild(host);
+            const result: Record<string, { pages: number; height: number }> = {};
+            try {
+                for (const chunk of chunks) {
+                    const key = chunk.getAttribute("data-print-chunk");
+                    if (!key) continue;
+                    const clone = chunk.cloneNode(true) as HTMLElement;
+                    clone.querySelectorAll("[data-print-footer]").forEach((f) => f.remove());
+                    host.appendChild(clone);
+                    await Promise.all(Array.from(clone.querySelectorAll("img")).map(waitImage));
+                    const height = clone.offsetHeight;
+                    result[key] = { pages: estimatePageCount(height), height };
+                    clone.remove();
+                }
+            } finally {
+                host.remove();
+            }
+            if (!cancelled) setChunkPages(result);
+        };
+        measure();
+        return () => {
+            cancelled = true;
+        };
+    }, [loading, items, selectedIds, showQuestionText, showAnswers, showAnalysis, showTags, showQRCodes, showQuestionHeader, fitImagesToPage, imageScale, answerImageScale, analysisImageScale]);
+
     const selectedItems = getSelectedPrintItems(items, selectedIds);
     const reserveAnswerSpace = shouldReserveAnswerSpace(showAnswers, showAnalysis);
     const countLabel = getPrintPreviewCountLabel(items.length, selectedItems.length);
     const emptyState = getPrintPreviewEmptyState(items.length, selectedItems.length);
+
+    // 勾选"图片适应页宽"时忽略缩放滑杆，图片铺满打印页宽（单列显示）
+    const getImageStyle = (scale: number) =>
+        fitImagesToPage
+            ? { width: "100%", maxWidth: "100%", height: "auto", display: "block", margin: "0 auto" }
+            : { width: `${scale}%`, maxWidth: "none", height: "auto", display: "block", margin: "0 auto" };
+
+    // 解析图片自适应：小图最多轻微放大 ANALYSIS_IMAGE_MAX_UPSCALE 倍（过度放大会出现锯齿），
+    // 自然宽度接近页宽时不放大，宽图缩小到页宽
+    const ANALYSIS_IMAGE_MAX_UPSCALE = 1.25;
+    const getAnalysisImageStyle = (scale: number, naturalWidth?: number) => {
+        if (!fitImagesToPage) return getImageStyle(scale);
+        const cap = naturalWidth
+            ? Math.min(PRINT_PAGE_CONTENT_WIDTH_PX, Math.round(naturalWidth * ANALYSIS_IMAGE_MAX_UPSCALE))
+            : PRINT_PAGE_CONTENT_WIDTH_PX;
+        return { width: "100%", maxWidth: `${cap}px`, height: "auto", display: "block", margin: "0 auto" };
+    };
 
     // 创建原始索引映射，用于显示正确的题目编号
     const originalIndexMap = new Map<string, number>();
     items.forEach((item, index) => {
         originalIndexMap.set(item.id, index);
     });
+
+    // 渲染某一打印块的页码脚标（仅打印可见，绝对定位于每页底部）
+    const renderFooters = (key: string, startPage: number, totalPages: number, minBoxHeight = 0) => {
+        const info = chunkPages[key];
+        if (!info) return null;
+        return getFooterTops(info.height, info.pages, minBoxHeight).map((top, i) => (
+            <div
+                key={i}
+                data-print-footer
+                className="hidden print:block absolute right-0 bg-white px-1 text-xs text-muted-foreground"
+                style={{ top }}
+            >
+                {`第${startPage + i}页（共${totalPages}页）`}
+            </div>
+        ));
+    };
 
     const toggleSelectedItem = (id: string) => {
         setSelectedIds((prev) => {
@@ -190,19 +273,21 @@ function PrintPreviewContent() {
                                 max="200"
                                 value={imageScale}
                                 onChange={(e) => setImageScale(Number(e.target.value))}
+                                disabled={fitImagesToPage}
                                 className="w-16 sm:w-20 accent-primary"
                             />
                         </div>
 
                         {/* Answer Image Scale Control */}
                         <div className="flex items-center gap-2 text-sm bg-muted/50 px-2 sm:px-3 py-1 rounded-md">
-                            <span className="whitespace-nowrap text-xs sm:text-sm">做题答案图片: {answerImageScale}%</span>
+                            <span className="whitespace-nowrap text-xs sm:text-sm">答题一图片: {answerImageScale}%</span>
                             <input
                                 type="range"
                                 min="30"
                                 max="200"
                                 value={answerImageScale}
                                 onChange={(e) => setAnswerImageScale(Number(e.target.value))}
+                                disabled={fitImagesToPage}
                                 className="w-16 sm:w-20 accent-primary"
                             />
                         </div>
@@ -216,6 +301,7 @@ function PrintPreviewContent() {
                                 max="200"
                                 value={analysisImageScale}
                                 onChange={(e) => setAnalysisImageScale(Number(e.target.value))}
+                                disabled={fitImagesToPage}
                                 className="w-16 sm:w-20 accent-primary"
                             />
                         </div>
@@ -275,6 +361,15 @@ function PrintPreviewContent() {
                                     className="rounded border-gray-300 text-primary focus:ring-primary w-3.5 h-3.5 sm:w-4 sm:h-4"
                                 />
                                 显示题目定位二维码
+                            </label>
+                            <label className="flex items-center gap-1.5 text-xs sm:text-sm cursor-pointer whitespace-nowrap hover:text-primary transition-colors">
+                                <input
+                                    type="checkbox"
+                                    checked={fitImagesToPage}
+                                    onChange={(e) => setFitImagesToPage(e.target.checked)}
+                                    className="rounded border-gray-300 text-primary focus:ring-primary w-3.5 h-3.5 sm:w-4 sm:h-4"
+                                />
+                                {'图片适应页宽'}
                             </label>
                         </div>
                     </div>
@@ -353,7 +448,93 @@ function PrintPreviewContent() {
                     return (
                         <div
                             key={item.id}
-                            className={`mb-4 border-b last:border-b-0 print:break-inside-avoid ${reserveAnswerSpace ? "pb-20 print:pb-16" : "pb-6"}`}
+                            className={`mb-4 border-b last:border-b-0 ${index > 0 ? "print:break-before-page" : ""}`}
+                        >
+                            {/* 题干块（第1页）：二维码 + 题干；打印时至少占满一整页（print:min-h-[963px] 对应 PRINT_CHUNK_MIN_HEIGHT_PX） */}
+                            <div
+                                data-print-chunk={`${item.id}:stem`}
+                                className={`print:relative print:min-h-[963px] ${reserveAnswerSpace ? "pb-20 print:pb-16" : "pb-6"}`}
+                            >
+                            {/* QR Code: 与题干同页（第1页），扫码定位本题 */}
+                            {showQRCodes && (
+                                <div className="mb-4 print:flex print:items-center">
+                                    <QRCodeDisplay
+                                        errorItemId={item.id}
+                                        size={48}
+                                        showLabel={false}
+                                        className="print:scale-75 print:origin-left"
+                                    />
+                                </div>
+                            )}
+
+                            {/* Original Image or Text */}
+                            {showQuestionText && item.questionText ? (
+                                <div className="mb-4">
+                                    <MarkdownRenderer content={item.questionText} />
+                                </div>
+                            ) : (
+                                <>
+                                    {/* Question Images Array */}
+                                    {item.questionImages && (() => {
+                                        try {
+                                            const images = JSON.parse(item.questionImages);
+                                            if (Array.isArray(images) && images.length > 0) {
+                                                return (
+                                                    <div className={`mb-4 grid ${fitImagesToPage ? "grid-cols-1" : "grid-cols-2"} gap-3`}>
+                                                        {images.map((img: any, idx: number) => (
+                                                            <div key={idx} className="break-inside-avoid" style={{ width: '100%' }}>
+                                                                <img
+                                                                    src={img.dataUrl}
+                                                                    alt={img.name || `题目图片 ${idx + 1}`}
+                                                                    className="h-auto rounded border"
+                                                                    style={getImageStyle(imageScale)}
+                                                                />
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                );
+                                            }
+                                        } catch (e) {
+                                            console.error("Failed to parse question images:", e);
+                                        }
+                                        return null;
+                                    })()}
+                                    {/* Fallback to Original Image */}
+                                    {(!item.questionImages || item.questionImages === 'null') && item.originalImageUrl && (
+                                        <div className="mb-4" style={{ width: '100%' }}>
+                                            <img
+                                                src={item.originalImageUrl}
+                                                alt={t.detail?.originalProblem || 'Question Image'}
+                                                className="h-auto border rounded"
+                                                style={getImageStyle(imageScale)}
+                                            />
+                                        </div>
+                                    )}
+                                </>
+                            )}
+
+                            {/* 页码脚标：题干块从第1页起 */}
+                            {(() => {
+                                const stemInfo = chunkPages[`${item.id}:stem`];
+                                const answerInfo = chunkPages[`${item.id}:answer`];
+                                const answerRendered = showQuestionHeader || showAnswers || showAnalysis;
+                                const broken = showAnswers || showAnalysis;
+                                const stemPages = stemInfo?.pages ?? 1;
+                                const answerPages = answerRendered ? (answerInfo?.pages ?? 1) : 0;
+                                const total = broken
+                                    ? stemPages + answerPages
+                                    : answerRendered
+                                        ? Math.max(1, stemPages + answerPages - 1)
+                                        : stemPages;
+                                return renderFooters(`${item.id}:stem`, 1, total, PRINT_CHUNK_MIN_HEIGHT_PX);
+                            })()}
+                        </div>
+
+                        {/* 题目栏 + 答案 + 解析：打印时另起一页，题目栏（题号/来源/知识点等）随答案、解析显示在第2页 */}
+                        {(showQuestionHeader || showAnswers || showAnalysis) && (
+                        <div
+                            data-print-chunk={`${item.id}:answer`}
+                            className={`print:relative ${showAnswers || showAnalysis ? "print:break-before-page" : ""}`}
                         >
                             {/* Question Header */}
                             {showQuestionHeader && (
@@ -361,16 +542,6 @@ function PrintPreviewContent() {
                                     <span className="text-lg font-bold">
                                         {t.printPreview?.questionNumber?.replace('{num}', String(questionNumber)) || `Question ${questionNumber}`}
                                     </span>
-                                    {showQRCodes && (
-                                        <div className="print:flex print:items-center">
-                                            <QRCodeDisplay
-                                                errorItemId={item.id}
-                                                size={48}
-                                                showLabel={false}
-                                                className="print:scale-75 print:origin-left"
-                                            />
-                                        </div>
-                                    )}
                                     {item.subject && (
                                         <span className="text-sm text-muted-foreground">
                                             {item.subject.name}
@@ -403,67 +574,6 @@ function PrintPreviewContent() {
                                     )}
                                 </div>
                             )}
-
-                            {/* Original Image or Text */}
-                            {showQuestionText && item.questionText ? (
-                                <div className="mb-4">
-                                    <MarkdownRenderer content={item.questionText} />
-                                </div>
-                            ) : (
-                                <>
-                                    {/* Question Images Array */}
-                                    {item.questionImages && (() => {
-                                        try {
-                                            const images = JSON.parse(item.questionImages);
-                                            if (Array.isArray(images) && images.length > 0) {
-                                                return (
-                                                    <div className="mb-4 grid grid-cols-2 gap-3">
-                                                        {images.map((img: any, idx: number) => (
-                                                            <div key={idx} className="break-inside-avoid" style={{ width: '100%' }}>
-                                                                <img
-                                                                    src={img.dataUrl}
-                                                                    alt={img.name || `题目图片 ${idx + 1}`}
-                                                                    className="h-auto rounded border"
-                                                                    style={{
-                                                                        width: `${imageScale}%`,
-                                                                        maxWidth: 'none', /* Allow scaling beyond container for print */
-                                                                        height: 'auto',
-                                                                        display: 'block',
-                                                                        margin: '0 auto'
-                                                                    }}
-                                                                />
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                );
-                                            }
-                                        } catch (e) {
-                                            console.error("Failed to parse question images:", e);
-                                        }
-                                        return null;
-                                    })()}
-                                    {/* Fallback to Original Image */}
-                                    {(!item.questionImages || item.questionImages === 'null') && item.originalImageUrl && (
-                                        <div className="mb-4" style={{ width: '100%' }}>
-                                            <img
-                                                src={item.originalImageUrl}
-                                                alt={t.detail?.originalProblem || 'Question Image'}
-                                                className="h-auto border rounded"
-                                                style={{
-                                                    width: `${imageScale}%`,
-                                                    maxWidth: 'none', /* Allow scaling beyond container for print */
-                                                    height: 'auto',
-                                                    display: 'block',
-                                                    margin: '0 auto'
-                                                }}
-                                            />
-                                        </div>
-                                    )}
-                                </>
-                            )}
-
-
-
                             {/* Answer */}
                             {showAnswers && (() => {
                                 const hasAnswerText = (item.answerText?.trim() || '').length > 0;
@@ -479,7 +589,7 @@ function PrintPreviewContent() {
                                 return hasAnswerText || hasAnswerImages;
                             })() && (
                                 <div className="mb-4">
-                                    <h3 className="font-semibold mb-2">{t.printPreview?.referenceAnswer || '做题答案'}:</h3>
+                                    <h3 className="font-semibold mb-2">{t.printPreview?.referenceAnswer || '答题一'}:</h3>
                                     {item.answerText && <MarkdownRenderer content={item.answerText} />}
                                     {/* Answer Images */}
                                     {item.answerImages && (() => {
@@ -487,20 +597,14 @@ function PrintPreviewContent() {
                                             const images = JSON.parse(item.answerImages);
                                             if (Array.isArray(images) && images.length > 0) {
                                                 return (
-                                                    <div className="mt-4 grid grid-cols-2 gap-3">
+                                                    <div className={`mt-4 grid ${fitImagesToPage ? "grid-cols-1" : "grid-cols-2"} gap-3`}>
                                                         {images.map((img: any, idx: number) => (
                                                             <div key={idx} className="break-inside-avoid" style={{ width: '100%' }}>
                                                                 <img
                                                                     src={img.dataUrl}
                                                                     alt={img.name || `答案图片 ${idx + 1}`}
                                                                     className="h-auto rounded border"
-                                                                    style={{
-                                                                        width: `${answerImageScale}%`,
-                                                                        maxWidth: 'none', /* Allow scaling beyond container for print */
-                                                                        height: 'auto',
-                                                                        display: 'block',
-                                                                        margin: '0 auto'
-                                                                    }}
+                                                                    style={getImageStyle(answerImageScale)}
                                                                 />
                                                             </div>
                                                         ))}
@@ -538,23 +642,26 @@ function PrintPreviewContent() {
                                             const images = JSON.parse(item.analysisImages);
                                             if (Array.isArray(images) && images.length > 0) {
                                                 return (
-                                                    <div className={`mt-4 grid grid-cols-2 gap-3 ${!item.analysis ? '' : ''}`}>
-                                                        {images.map((img: any, idx: number) => (
-                                                            <div key={idx} className="break-inside-avoid" style={{ width: '100%' }}>
-                                                                <img
-                                                                    src={img.dataUrl}
-                                                                    alt={img.name || `解析图片 ${idx + 1}`}
-                                                                    className="h-auto rounded border"
-                                                                    style={{
-                                                                        width: `${analysisImageScale}%`,
-                                                                        maxWidth: 'none', /* Allow scaling beyond container for print */
-                                                                        height: 'auto',
-                                                                        display: 'block',
-                                                                        margin: '0 auto'
-                                                                    }}
-                                                                />
-                                                            </div>
-                                                        ))}
+                                                    <div className={`mt-4 grid ${fitImagesToPage ? "grid-cols-1" : "grid-cols-2"} gap-3`}>
+                                                        {images.map((img: any, idx: number) => {
+                                                            const widthKey = `${item.id}:analysis:${idx}`;
+                                                            return (
+                                                                <div key={idx} className="break-inside-avoid" style={{ width: '100%' }}>
+                                                                    <img
+                                                                        src={img.dataUrl}
+                                                                        alt={img.name || `解析图片 ${idx + 1}`}
+                                                                        className="h-auto rounded border"
+                                                                        style={getAnalysisImageStyle(analysisImageScale, analysisNaturalWidths[widthKey])}
+                                                                        onLoad={(e) => {
+                                                                            const natural = e.currentTarget.naturalWidth;
+                                                                            setAnalysisNaturalWidths((prev) =>
+                                                                                prev[widthKey] === natural ? prev : { ...prev, [widthKey]: natural }
+                                                                            );
+                                                                        }}
+                                                                    />
+                                                                </div>
+                                                            );
+                                                        })}
                                                     </div>
                                                 );
                                             }
@@ -564,6 +671,18 @@ function PrintPreviewContent() {
                                         return null;
                                     })()}
                                 </div>
+                            )}
+                            {/* 页码脚标：答案/解析块（另起一页时从题干页数的下一页开始编号） */}
+                            {(() => {
+                                const stemInfo = chunkPages[`${item.id}:stem`];
+                                const answerInfo = chunkPages[`${item.id}:answer`];
+                                const broken = showAnswers || showAnalysis;
+                                const stemPages = stemInfo?.pages ?? 1;
+                                const answerPages = answerInfo?.pages ?? 1;
+                                const start = broken ? stemPages + 1 : stemPages;
+                                return renderFooters(`${item.id}:answer`, start, start + answerPages - 1);
+                            })()}
+                            </div>
                             )}
                         </div>
                     );

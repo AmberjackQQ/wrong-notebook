@@ -1956,7 +1956,7 @@ export default function ErrorDetailPage() {
                         <Card className="border-primary/20">
                             <CardHeader>
                                 <div className="flex justify-between items-center">
-                                    <CardTitle className="text-primary">做题答案</CardTitle>
+                                    <CardTitle className="text-primary">答题一</CardTitle>
                                     {!isEditingAnswer && (
                                         <Button
                                             variant="ghost"

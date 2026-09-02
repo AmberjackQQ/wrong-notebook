@@ -595,7 +595,7 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
                     </div>
 
                     <div className="space-y-2">
-                        <Label>做题时间</Label>
+                        <Label>答题一时间</Label>
                         <Input
                             type="datetime-local"
                             value={data.answerTime ? new Date(data.answerTime).toISOString().slice(0, 16) : ''}
@@ -611,7 +611,7 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
                             }}
                         />
                         <p className="text-xs text-muted-foreground">
-                            设置做题时间，默认为当前导入时间
+                            设置答题一时间，默认为当前导入时间
                         </p>
                     </div>
 

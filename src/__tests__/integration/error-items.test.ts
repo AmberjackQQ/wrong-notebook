@@ -530,14 +530,18 @@ describe('/api/error-items', () => {
             mocks.mockPrismaErrorItem.count.mockResolvedValue(0);
             mocks.mockPrismaErrorItem.findMany.mockResolvedValue([]);
 
-            const request = new Request('http://localhost/api/error-items/list?tag=一元一次方程');
+            const request = new Request('http://localhost/api/error-items/list?tags=一元一次方程,一元二次方程');
             const response = await GET_LIST(request);
 
             expect(response.status).toBe(200);
             expect(mocks.mockPrismaErrorItem.findMany).toHaveBeenCalledWith(
                 expect.objectContaining({
                     where: expect.objectContaining({
-                        knowledgePoints: { contains: '一元一次方程' },
+                        tags: {
+                            some: {
+                                name: { in: ['一元一次方程', '一元二次方程'] },
+                            },
+                        },
                     }),
                 })
             );
