@@ -46,7 +46,7 @@ test.describe('Print preview pagination', () => {
                 svgCount: d.querySelectorAll('svg').length,
             })).concat([
                 { isA: false, isB: false, breakBefore: `wrappers:${sectionWrappers.length}` } as any,
-                { isA: false, isB: false, breakBefore: `wrappersWithHeader:${sectionWrappers.filter(w => w.querySelector('span.text-lg.font-bold')).length}` } as any,
+                { isA: false, isB: false, breakBefore: `wrappersWithHeader:${sectionWrappers.filter(w => Array.from(w.querySelectorAll('span')).some(s => (s.textContent || '').startsWith('题号：'))).length}` } as any,
                 { isA: false, isB: false, breakBefore: `wrappersWithSvg:${sectionWrappers.filter(w => w.querySelector('svg')).length}` } as any,
             ]);
         });

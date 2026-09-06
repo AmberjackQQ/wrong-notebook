@@ -8,6 +8,7 @@ import { createLogger } from "@/lib/logger";
 const logger = createLogger('api:question-sources');
 
 // GET /api/question-sources - 获取用户自定义题目来源
+// 可选参数 subjectId：只返回该笔记本内错题实际使用过的来源（用于按科目过滤下拉选项）
 export async function GET(req: Request) {
     const session = await getServerSession(authOptions);
 
@@ -28,6 +29,17 @@ export async function GET(req: Request) {
             where: { userId: user.id },
             orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
         });
+
+        const subjectId = new URL(req.url).searchParams.get("subjectId");
+        if (subjectId) {
+            const usedLevels = await prisma.errorItem.findMany({
+                where: { userId: user.id, subjectId },
+                distinct: ['paperLevel'],
+                select: { paperLevel: true },
+            });
+            const usedNames = new Set(usedLevels.map(i => i.paperLevel));
+            return NextResponse.json(sources.filter(s => usedNames.has(s.name)));
+        }
 
         return NextResponse.json(sources);
     } catch (error) {

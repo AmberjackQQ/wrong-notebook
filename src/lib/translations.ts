@@ -92,7 +92,7 @@ export const translations = {
         },
         upload: {
             // dragDrop: "Click or drag image to upload", // Moved to app
-            support: "Support JPG, PNG (Max 5MB)",
+            support: "Supports JPG, PNG (original quality, no compression)",
             analyze: "Analyze with AI",
             // analyzing: "Analyzing...", // Moved to app
             screenshot: "Screenshot",
@@ -751,7 +751,7 @@ export const translations = {
         },
         upload: {
             // dragDrop: "点击或拖拽上传图片", // Moved to app
-            support: "支持 JPG, PNG (最大 5MB)",
+            support: "支持 JPG、PNG，保持原图质量不再压缩",
             analyze: "AI 智能解析",
             // analyzing: "解析中...", // Moved to app
             screenshot: "屏幕截图",
@@ -873,7 +873,7 @@ export const translations = {
         detail: {
             title: "错题详情",
             question: "题目",
-            originalProblem: "原始问题",
+            originalProblem: "题目图片",
             yourNotes: "你的笔记 / 答案",
             noNotes: "暂无笔记",
             notFound: "未找到该错题",

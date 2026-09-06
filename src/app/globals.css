@@ -165,4 +165,45 @@
   .bg-muted {
     background-color: #f5f5f5 !important;
   }
+
+  /* 打印块按测量页数撑满到末页页底（--print-min-h 由 print-preview 按块写入），
+     页码脚标才能绝对定位到每一页的纸张右下角；末页留 8px 余量防溢出产生空白页 */
+  [data-print-chunk],
+  [data-print-blank] {
+    min-height: var(--print-min-h, auto);
+  }
+}
+
+/* Markdown 渲染内容中的 HTML 块（OCR 识别结果常含 <table> 等）：
+   Tailwind preflight 会去掉表格边框和列表样式，这里按文档语义恢复 */
+.markdown-content table {
+  border-collapse: collapse;
+  margin: 8px 0;
+}
+
+.markdown-content th,
+.markdown-content td {
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.markdown-content th {
+  background-color: var(--muted);
+  font-weight: 600;
+}
+
+.markdown-content ul,
+.markdown-content ol {
+  margin: 4px 0;
+  padding-left: 1.5rem;
+}
+
+.markdown-content ul {
+  list-style: disc;
+}
+
+.markdown-content ol {
+  list-style: decimal;
 }

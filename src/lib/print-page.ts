@@ -13,12 +13,15 @@ export function estimatePageCount(heightPx: number): number {
     return Math.max(1, Math.ceil(heightPx / PRINT_PAGE_CONTENT_HEIGHT_PX));
 }
 
-// 计算每页页码脚标的 top 值：位于每页底部，最后一页贴内容底部，
-// 并保证脚标不超出内容盒（minBoxHeightPx 用于打印时被 min-height 撑满的块）
-export function getFooterTops(heightPx: number, pages: number, minBoxHeightPx = 0): number[] {
-    const boxHeight = Math.max(heightPx, minBoxHeightPx);
-    return Array.from({ length: pages }, (_, i) => {
-        const pageBottom = Math.min((i + 1) * PRINT_PAGE_CONTENT_HEIGHT_PX, boxHeight);
-        return Math.max(0, pageBottom - PRINT_FOOTER_HEIGHT_PX);
-    });
+// 计算每页页码脚标的 top 值（相对块顶的绝对偏移）：每一页的脚标都固定在该页纸张底部，
+// 前提是打印块被撑满到末页页底（page.tsx 通过 --print-min-h 实现撑满）。
+// 例外：答案块与题干块合并排版（不另起页）时，答案块的原点不在页网格上，
+// 调用方传入 lastPageTopPx 显式指定其末页脚标位置。
+export function getFooterTops(pages: number, lastPageTopPx?: number): number[] {
+    const pageBottom = PRINT_PAGE_CONTENT_HEIGHT_PX - PRINT_FOOTER_HEIGHT_PX;
+    return Array.from({ length: Math.max(0, pages) }, (_, i) =>
+        i === pages - 1 && lastPageTopPx !== undefined
+            ? lastPageTopPx
+            : i * PRINT_PAGE_CONTENT_HEIGHT_PX + pageBottom
+    );
 }

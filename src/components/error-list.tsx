@@ -22,7 +22,6 @@ import {
 import { KnowledgeFilter } from "@/components/knowledge-filter";
 import { ErrorItem, PaginatedResponse } from "@/types/api";
 import { apiClient } from "@/lib/api-client";
-import { cleanMarkdown } from "@/lib/markdown-utils";
 import { Pagination } from "@/components/ui/pagination";
 import { DEFAULT_PAGE_SIZE } from "@/lib/constants/pagination";
 import { getMistakeStatusLabel } from "@/lib/mistake-status";
@@ -300,11 +299,14 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
     // 追踪筛选条件是否变化（用于判断是否需要重置页码）
     const prevFiltersRef = useRef({ search, masteryFilter, timeFilter, selectedTags, subjectId, gradeFilter, chapterFilter, paperLevelFilter, sortBy, sortOrder });
 
-    // 获取自定义题目来源
+    // 获取自定义题目来源（限定当前笔记本内实际使用过的来源，其他科目的来源不显示）
     useEffect(() => {
         const fetchCustomSources = async () => {
             try {
-                const sources = await apiClient.get<{ id: string; name: string }[]>("/api/question-sources");
+                const url = subjectId
+                    ? `/api/question-sources?subjectId=${encodeURIComponent(subjectId)}`
+                    : "/api/question-sources";
+                const sources = await apiClient.get<{ id: string; name: string }[]>(url);
                 setCustomQuestionSources(sources.map(s => s.name));
             } catch (error) {
                 console.error("Failed to fetch custom question sources:", error);
@@ -313,7 +315,7 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
         };
 
         fetchCustomSources();
-    }, []);
+    }, [subjectId]);
 
     useEffect(() => {
         const prevFilters = prevFiltersRef.current;
@@ -616,18 +618,7 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
                                         </div>
                                     </CardHeader>
                                     <CardContent>
-                                        <div className="text-sm line-clamp-3">
-                                            {(() => {
-                                                // 提取文本并清理 LaTeX/Markdown 格式
-                                                const rawText = (item.questionText || "").split('\n\n')[0]; // 取第一段
-                                                const cleanText = cleanMarkdown(rawText);
-
-                                                return cleanText.length > 80
-                                                    ? cleanText.substring(0, 80) + "..."
-                                                    : cleanText;
-                                            })()}
-                                        </div>
-                                        <div className="flex flex-wrap gap-2 mt-3">
+                                        <div className="flex flex-wrap gap-2">
                                             <Badge
                                                 variant={item.mistakeStatus === "focus" ? "default" : item.mistakeStatus === "wrong_attempt" ? "default" : item.mistakeStatus === "partially_wrong" ? "default" : "secondary"}
                                                 className={

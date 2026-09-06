@@ -75,7 +75,7 @@ export async function PUT(
         }
 
         const body = await req.json();
-        const { knowledgePoints, gradeSemester, paperLevel, questionNumber, questionText, questionImages, answerText, answerImages, analysis, analysisImages, subjectId,  wrongAnswerText, mistakeAnalysis, mistakeStatus, geogebraCommands, createdAt, answerTime } = body;
+        const { knowledgePoints, gradeSemester, paperLevel, questionNumber, questionText, questionImages, originalImageUrl, answerText, answerImages, analysis, analysisImages, subjectId,  wrongAnswerText, mistakeAnalysis, mistakeStatus, geogebraCommands, createdAt, answerTime } = body;
 
         logger.debug({ questionNumber, gradeSemester, paperLevel }, 'Received update request with metadata fields');
 
@@ -99,6 +99,8 @@ export async function PUT(
         if (questionNumber !== undefined) updateData.questionNumber = questionNumber || null;
         if (questionText !== undefined) updateData.questionText = questionText;
         if (questionImages !== undefined) updateData.questionImages = questionImages || null;
+        // originalImageUrl 为数据库必填列，空值以空字符串存储（前端将其视为无图片）
+        if (originalImageUrl !== undefined) updateData.originalImageUrl = originalImageUrl || '';
         if (answerText !== undefined) updateData.answerText = answerText || null; // 空字符串转null
         if (answerImages !== undefined) updateData.answerImages = answerImages || null;
         if (analysis !== undefined) updateData.analysis = analysis || null; // 空字符串转null

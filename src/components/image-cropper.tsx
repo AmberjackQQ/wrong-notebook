@@ -74,6 +74,8 @@ export function ImageCropper({ imageSrc, open, onClose, onCropComplete }: ImageC
             return null;
         }
 
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
         ctx.drawImage(
             image,
             crop.x * scaleX,
@@ -93,7 +95,7 @@ export function ImageCropper({ imageSrc, open, onClose, onCropComplete }: ImageC
                     return;
                 }
                 resolve(blob);
-            }, "image/jpeg");
+            }, "image/jpeg", 0.9);
         });
     };
 

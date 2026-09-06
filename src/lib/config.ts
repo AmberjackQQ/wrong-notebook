@@ -41,6 +41,10 @@ export interface AppConfig {
     timeouts?: {
         analyze?: number; // 毫秒
     };
+    paddleOcr?: {
+        token?: string;
+        model?: string;
+    };
 }
 
 // 旧版 OpenAI 配置格式（用于迁移检测）
@@ -119,6 +123,11 @@ const DEFAULT_CONFIG: AppConfig = {
     timeouts: {
         analyze: 180000,
     },
+    paddleOcr: {
+        // 密钥只从环境变量（.env）或运行时配置读取，不写入代码
+        token: process.env.PADDLE_OCR_TOKEN || '',
+        model: 'PaddleOCR-VL-1.6',
+    },
 };
 
 export function getAppConfig(): AppConfig {
@@ -153,6 +162,7 @@ export function getAppConfig(): AppConfig {
                 azure: { ...DEFAULT_CONFIG.azure, ...userConfig.azure },
                 prompts: { ...DEFAULT_CONFIG.prompts, ...userConfig.prompts },
                 timeouts: { ...DEFAULT_CONFIG.timeouts, ...userConfig.timeouts },
+                paddleOcr: { ...DEFAULT_CONFIG.paddleOcr, ...userConfig.paddleOcr },
             };
         } catch (error) {
             logger.error({ error }, 'Failed to read config file');
@@ -175,6 +185,7 @@ export function updateAppConfig(newConfig: Partial<AppConfig>) {
         azure: { ...currentConfig.azure, ...newConfig.azure },
         prompts: { ...currentConfig.prompts, ...newConfig.prompts },
         timeouts: { ...currentConfig.timeouts, ...newConfig.timeouts },
+        paddleOcr: { ...currentConfig.paddleOcr, ...newConfig.paddleOcr },
     };
 
     try {

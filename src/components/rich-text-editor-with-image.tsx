@@ -50,6 +50,10 @@ export function RichTextEditorWithImage({
   const [cropArea, setCropArea] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const [isSelectingArea, setIsSelectingArea] = useState(false);
   const [selectionStart, setSelectionStart] = useState<{ x: number; y: number } | null>(null);
+  // 预览图缩放倍数（1 = 原始尺寸 1:1 显示），超出对话框部分用滚动条平移
+  const [previewZoom, setPreviewZoom] = useState(1);
+  // 截图原始尺寸（onLoad 时记录），用于按 1:1 像素计算预览宽度
+  const [previewNaturalWidth, setPreviewNaturalWidth] = useState<number | null>(null);
   const previewImageRef = useRef<HTMLImageElement>(null);
 
   // 使用 ref 来存储拖拽状态，避免 useEffect 依赖问题
@@ -273,7 +277,8 @@ export function RichTextEditorWithImage({
 
         const croppedDataUrl = canvas.toDataURL('image/png');
 
-        if (croppedDataUrl && croppedDataUrl.length > 1000) {
+        // 小尺寸裁剪结果的合法 PNG 也可能不足 1000 字符，只做最低限度校验
+        if (croppedDataUrl && croppedDataUrl.startsWith('data:image/') && croppedDataUrl.length > 100) {
           const newImage: PastedImage = {
             id: Date.now().toString() + Math.random(),
             dataUrl: croppedDataUrl,
@@ -310,6 +315,16 @@ export function RichTextEditorWithImage({
     resetScreenshotState();
   };
 
+  // 设置预览缩放倍数（相对原始尺寸，限制 25%~500%），缩放后清除未完成的选区
+  const changePreviewZoom = (target: number) => {
+    setPreviewZoom(Math.min(5, Math.max(0.25, Math.round(target * 10) / 10)));
+    setCropArea(null);
+    selectionStartRef.current = null;
+    isSelectingAreaRef.current = false;
+    setIsSelectingArea(false);
+    setSelectionStart(null);
+  };
+
   // 重置截图状态
   const resetScreenshotState = () => {
     setIsScreenshotting(false);
@@ -317,6 +332,8 @@ export function RichTextEditorWithImage({
     setCropArea(null);
     setIsSelectingArea(false);
     setSelectionStart(null);
+    setPreviewZoom(1);
+    setPreviewNaturalWidth(null);
 
     // 重置 ref
     selectionStartRef.current = null;
@@ -404,7 +421,7 @@ export function RichTextEditorWithImage({
       <div className="relative">
         <Textarea
           ref={textareaRef}
-          value={value}
+          value={value ?? ""}
           onChange={handleTextChange}
           onPaste={handlePaste}
           placeholder={placeholder}
@@ -433,15 +450,30 @@ export function RichTextEditorWithImage({
         <div className="fixed inset-0 flex items-center justify-center p-4 bg-black/50 z-50">
           <Card className="max-w-4xl w-full max-h-[90vh] overflow-auto p-4 space-y-3 shadow-2xl">
             <div className="text-sm font-medium">选择要裁剪的区域：</div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">缩放：</span>
+              <Button size="sm" variant="outline" onClick={() => changePreviewZoom(previewZoom - 0.5)} disabled={previewZoom <= 0.25}>
+                缩小
+              </Button>
+              <span className="text-xs w-12 text-center">{Math.round(previewZoom * 100)}%</span>
+              <Button size="sm" variant="outline" onClick={() => changePreviewZoom(previewZoom + 0.5)} disabled={previewZoom >= 5}>
+                放大
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => changePreviewZoom(1)} disabled={previewZoom === 1}>
+                重置
+              </Button>
+              <span className="text-xs text-muted-foreground">100% 为原始尺寸，超出窗口部分可用滚动条查看</span>
+            </div>
             <div
-              className="relative inline-block w-full"
-              style={{ pointerEvents: 'auto' }}
+              className="relative inline-block"
+              style={{ pointerEvents: 'auto', width: previewNaturalWidth ? `${previewNaturalWidth * previewZoom}px` : '100%' }}
             >
               <img
                 ref={previewImageRef}
                 src={screenshotPreview}
                 alt="Screenshot preview"
                 className="w-full border rounded cursor-crosshair"
+                onLoad={(e) => setPreviewNaturalWidth(e.currentTarget.naturalWidth)}
                 style={{
                   maxWidth: '100%',
                   pointerEvents: 'auto',

@@ -16,7 +16,7 @@ import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, CheckCircle, XCircle, RefreshCw, Trash2, Edit, Save, X, Box, Loader2, Plus, ChevronDown, Monitor } from "lucide-react";
+import { ArrowLeft, CheckCircle, XCircle, RefreshCw, Trash2, Edit, Save, X, Box, Loader2, Plus, ChevronDown, Monitor, Printer, ScanText } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import Link from "next/link";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -1106,6 +1106,9 @@ export default function ErrorDetailPage() {
     const [isEditingQuestion, setIsEditingQuestion] = useState(false);
     const [questionInput, setQuestionInput] = useState("");
     const [questionImages, setQuestionImages] = useState<Array<{ id: string; dataUrl: string; name: string }>>([]);
+    // 题目OCR：识别“原始问题”图片的文字（飞桨 PaddleOCR），结果仅展示不持久化
+    const [isOcrRunning, setIsOcrRunning] = useState(false);
+    const [questionOcrText, setQuestionOcrText] = useState("");
 
     const [isEditingAnswer, setIsEditingAnswer] = useState(false);
     const [answerInput, setAnswerInput] = useState("");
@@ -1124,7 +1127,7 @@ export default function ErrorDetailPage() {
     // --- Question Handlers ---
     const startEditingQuestion = () => {
         if (item) {
-            setQuestionInput(item.questionText);
+            setQuestionInput(item.questionText || "");
             // Parse existing images
             if (item.questionImages) {
                 try {
@@ -1138,6 +1141,48 @@ export default function ErrorDetailPage() {
                 setQuestionImages([]);
             }
             setIsEditingQuestion(true);
+        }
+    };
+
+    // OCR 识别源：优先原始图；没有时回退题目图片（编辑中未保存的集合优先），取第一张
+    const getOcrImage = (): string | null => {
+        if (item?.originalImageUrl) return item.originalImageUrl;
+        let fallback: Array<{ dataUrl?: string }> = questionImages;
+        if (fallback.length === 0) {
+            try {
+                fallback = JSON.parse(item?.questionImages || '[]');
+            } catch {
+                fallback = [];
+            }
+        }
+        return fallback[0]?.dataUrl || null;
+    };
+
+    const handleOcrOriginalImage = async () => {
+        const image = getOcrImage();
+        if (!image) {
+            alert('没有可识别的题目图片');
+            return;
+        }
+        setIsOcrRunning(true);
+        try {
+            const result = await apiClient.post<{ markdown: string }>('/api/ocr/paddle', {
+                image,
+            });
+            setQuestionOcrText(result.markdown || '');
+            // 识别结果直接填入题目文字编辑框（点击OCR即明确要用图片文字作为题目），
+            // 点保存后持久化并显示在详情页；取消编辑可放弃
+            if (result.markdown) {
+                setQuestionInput(result.markdown);
+            }
+            if (!result.markdown) {
+                alert('未识别到文字内容');
+            }
+        } catch (error: any) {
+            console.error('OCR failed:', error);
+            alert(`OCR 识别失败：${error?.data?.message || error?.message || '请稍后重试'}`);
+        } finally {
+            setIsOcrRunning(false);
         }
     };
 
@@ -1156,7 +1201,7 @@ export default function ErrorDetailPage() {
                 });
             }
 
-            alert('原始问题图片已删除');
+            alert('题目图片已删除');
         } catch (error) {
             console.error('删除原始图片失败:', error);
             alert('删除失败，请稍后重试');
@@ -1167,16 +1212,31 @@ export default function ErrorDetailPage() {
         try {
             // 将空图片数组保存为空JSON数组，而不是null
             const imagesJson = questionImages.length > 0 ? JSON.stringify(questionImages) : '[]';
+            // 题目图片集合有变化时，同步“原始问题”图片（取第一张；清空图片则置为无图片）
+            let prevUrls: string[] = [];
+            try {
+                prevUrls = JSON.parse(item?.questionImages || '[]').map((img: { dataUrl: string }) => img.dataUrl);
+            } catch {
+                prevUrls = [];
+            }
+            const newUrls = questionImages.map((img) => img.dataUrl);
+            const imagesChanged =
+                prevUrls.length !== newUrls.length || prevUrls.some((url, idx) => url !== newUrls[idx]);
+            const nextOriginalImageUrl = imagesChanged
+                ? (questionImages.length > 0 ? questionImages[0].dataUrl : '')
+                : undefined;
             await apiClient.put(`/api/error-items/${item?.id}`, {
                 questionText: questionInput || '',
-                questionImages: imagesJson
+                questionImages: imagesJson,
+                ...(nextOriginalImageUrl !== undefined ? { originalImageUrl: nextOriginalImageUrl } : {})
             });
             setIsEditingQuestion(false);
             if (item) {
                 setItem({
                     ...item,
                     questionText: questionInput || '',
-                    questionImages: imagesJson
+                    questionImages: imagesJson,
+                    ...(nextOriginalImageUrl !== undefined ? { originalImageUrl: nextOriginalImageUrl } : {})
                 });
             }
             setQuestionImages([]);
@@ -1190,12 +1250,13 @@ export default function ErrorDetailPage() {
         setIsEditingQuestion(false);
         setQuestionInput("");
         setQuestionImages([]);
+        setQuestionOcrText("");
     };
 
     // --- Answer Handlers ---
     const startEditingAnswer = () => {
         if (item) {
-            setAnswerInput(item.answerText);
+            setAnswerInput(item.answerText || "");
             // Parse existing images
             if (item.answerImages) {
                 try {
@@ -1273,7 +1334,7 @@ export default function ErrorDetailPage() {
     // --- Analysis Handlers ---
     const startEditingAnalysis = () => {
         if (item) {
-            setAnalysisInput(item.analysis);
+            setAnalysisInput(item.analysis || "");
             // Parse existing images
             if (item.analysisImages) {
                 try {
@@ -1422,6 +1483,12 @@ export default function ErrorDetailPage() {
                                 {t.detail.practice}
                             </Button>
                         </Link>
+                        <Link href={`/print-preview?selectedIds=${item.id}`}>
+                            <Button variant="outline" size="sm">
+                                <Printer className="mr-2 h-4 w-4" />
+                                {t.printPreview?.printButton || "打印 / 保存 PDF"}
+                            </Button>
+                        </Link>
                         <Button
                             size="sm"
                             variant={item.masteryLevel > 0 ? "default" : "default"}
@@ -1491,7 +1558,7 @@ export default function ErrorDetailPage() {
                                                     variant="destructive"
                                                     className="absolute top-2 right-2 h-8 w-8 p-0 shadow-lg rounded-full bg-red-600 hover:bg-red-700 text-white border-2 border-white"
                                                     onClick={() => {
-                                                        if (confirm('确定要删除原始问题图片吗？')) {
+                                                        if (confirm('确定要删除题目图片吗？')) {
                                                             handleDeleteOriginalImage();
                                                         }
                                                     }}
@@ -1534,6 +1601,45 @@ export default function ErrorDetailPage() {
                                             rows={8}
                                             existingImages={questionImages}
                                         />
+                                        <div className="space-y-2">
+                                            <div className="flex items-center justify-between gap-2">
+                                                <label className="text-sm text-muted-foreground">
+                                                    题目OCR（识别题目图片中的文字）
+                                                </label>
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    onClick={handleOcrOriginalImage}
+                                                    disabled={isOcrRunning || !getOcrImage()}
+                                                    title={!getOcrImage() ? '该题目没有图片可识别' : undefined}
+                                                >
+                                                    {isOcrRunning ? (
+                                                        <>
+                                                            <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                                                            识别中，可能需要1~2分钟…
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <ScanText className="mr-1 h-4 w-4" />
+                                                            OCR识别题目图片
+                                                        </>
+                                                    )}
+                                                </Button>
+                                            </div>
+                                            <Textarea
+                                                value={questionOcrText}
+                                                onChange={(e) => setQuestionOcrText(e.target.value)}
+                                                placeholder={'点击右上角"OCR识别题目图片"按钮，识别结果将显示在这里'}
+                                                rows={8}
+                                                className="w-full font-mono text-sm"
+                                            />
+                                            {questionOcrText && (
+                                                <div className="rounded-md border p-3">
+                                                    <div className="mb-1 text-xs text-muted-foreground">渲染预览</div>
+                                                    <MarkdownRenderer content={questionOcrText} />
+                                                </div>
+                                            )}
+                                        </div>
                                         <div className="flex gap-2">
                                             <Button size="sm" onClick={saveQuestionHandler}>
                                                 <Save className="h-4 w-4 mr-1" />
@@ -1550,7 +1656,6 @@ export default function ErrorDetailPage() {
                                         <MarkdownRenderer content={item.questionText} />
                                         {item.questionImages && (
                                             <div className="space-y-2">
-                                                <div className="text-sm font-medium">题目图片：</div>
                                                 <div className="grid grid-cols-2 gap-3">
                                                     {(() => {
                                                         try {
@@ -2023,7 +2128,7 @@ export default function ErrorDetailPage() {
                                         <MarkdownRenderer content={item.answerText} className="font-semibold" />
                                         {item.answerImages && (
                                             <div className="space-y-2">
-                                                <div className="text-sm font-medium">答案图片：</div>
+                                                <div className="text-sm font-medium">答题图片：</div>
                                                 <div className="grid grid-cols-2 gap-3">
                                                     {(() => {
                                                         try {

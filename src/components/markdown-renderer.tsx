@@ -1,5 +1,6 @@
 import React, { useMemo, useEffect, useRef } from 'react';
 import katex from 'katex';
+import renderMathInElement from 'katex/contrib/auto-render';
 import 'katex/dist/katex.min.css';
 
 interface MarkdownRendererProps {
@@ -18,6 +19,12 @@ const processInlineMarkdown = (text: string): string => {
         .replace(/\n\n+/g, '<br/><br/>')
         .replace(/\n/g, '<br/>');
 };
+
+// $...$ 有效性校验：内容 trim 后非空，闭合 $ 后不能紧跟数字，
+// 避免“价格 $5 和 $6 元”这类金额文本被误判为公式；
+// OCR 输出常见 $ \frac{a}{b} $ 形式（$ 两侧带空格），首尾空白允许，渲染时 trim
+const isValidInlineDollarMath = (math: string, source: string, endOffset: number): boolean =>
+    math.trim().length > 0 && !/^\d/.test(source.slice(endOffset));
 
 // Custom component for KaTeX rendering
 const KatexInline: React.FC<{ math: string }> = ({ math }) => {
@@ -62,60 +69,119 @@ const KatexBlock: React.FC<{ math: string }> = ({ math }) => {
     );
 };
 
+// 块级 HTML（PaddleOCR 识别结果常含 <table>、列表等）：整块原样渲染。
+// 不能走 processInlineMarkdown——其 \n→<br/> 替换会插到表格标签之间，
+// 浏览器解析时把非法节点提升到表格外，表格结构被破坏
+const buildHtmlBlockRegex = () =>
+    /<(table|thead|tbody|tfoot|ul|ol|dl|pre|blockquote)\b[\s\S]*?<\/\1>/gi;
+
+// HTML 块容器：注入后对块内文本再做一次 KaTeX 自动渲染，
+// 让表格单元格等位置的 $...$、\(...\) 公式正常显示
+const HtmlBlock: React.FC<{ html: string }> = ({ html }) => {
+    const containerRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (containerRef.current) {
+            containerRef.current.innerHTML = html;
+            renderMathInElement(containerRef.current, {
+                delimiters: [
+                    { left: '$$', right: '$$', display: true },
+                    { left: '\\[', right: '\\]', display: true },
+                    { left: '\\(', right: '\\)', display: false },
+                    { left: '$', right: '$', display: false },
+                ],
+                throwOnError: false,
+            });
+        }
+    }, [html]);
+
+    return <div ref={containerRef} />;
+};
+
 export function MarkdownRenderer({ content, className = '' }: MarkdownRendererProps) {
     // Process content inline: render mixed markdown and LaTeX without line breaks
     const renderedContent = useMemo(() => {
         if (!content) return null;
 
         const elements: React.ReactNode[] = [];
-        let lastIndex = 0;
 
-        // Match LaTeX formulas: \(...\) for inline, \[...\] for block
-        const latexRegex = /\\\(([\s\S]*?)\\\)|\\\[([\s\S]*?)\\\]/g;
-        let match;
+        // Match LaTeX formulas: \[...\] block, \(...\) inline,
+        // plus $$...$$ / $...$（PaddleOCR 等 markdown 输出的常用定界符）
+        const latexRegex = /\\\[([\s\S]*?)\\\]|\\\(([\s\S]*?)\\\)|\$\$([\s\S]+?)\$\$|\$([^\n$]+?)\$/g;
 
-        while ((match = latexRegex.exec(content)) !== null) {
-            // Add text before LaTeX formula
-            if (match.index > lastIndex) {
-                const textContent = content.substring(lastIndex, match.index);
-                // Process as inline markdown to avoid wrapping in <p>
-                elements.push(
-                    <span key={`text-${lastIndex}`} dangerouslySetInnerHTML={{
-                        __html: processInlineMarkdown(textContent)
-                    }} />
-                );
-            }
-
-            // Add LaTeX formula
-            if (match[1] !== undefined) {
-                elements.push(<KatexInline key={`inline-${match.index}`} math={match[1]} />);
-            } else if (match[2] !== undefined) {
-                elements.push(<KatexBlock key={`block-${match.index}`} math={match[2].trim()} />);
-            }
-
-            lastIndex = match.index + match[0].length;
-        }
-
-        // Add remaining text after last LaTeX formula
-        if (lastIndex < content.length) {
-            const textContent = content.substring(lastIndex);
+        const pushText = (text: string, key: string) => {
             elements.push(
-                <span key={`text-${lastIndex}`} dangerouslySetInnerHTML={{
-                    __html: processInlineMarkdown(textContent)
+                <span key={key} dangerouslySetInnerHTML={{
+                    __html: processInlineMarkdown(text)
                 }} />
             );
+        };
+
+        // 普通文本段：走 LaTeX + markdown 管线
+        const pushTextSegment = (text: string, segIndex: number) => {
+            let lastIndex = 0;
+            let match;
+            latexRegex.lastIndex = 0;
+
+            while ((match = latexRegex.exec(text)) !== null) {
+                const start = match.index;
+                const raw = match[0];
+
+                if (start > lastIndex) {
+                    pushText(text.substring(lastIndex, start), `text-${segIndex}-${lastIndex}`);
+                }
+
+                if (match[1] !== undefined) {
+                    elements.push(<KatexBlock key={`block-${segIndex}-${start}`} math={match[1]} />);
+                } else if (match[2] !== undefined) {
+                    elements.push(<KatexInline key={`inline-${segIndex}-${start}`} math={match[2]} />);
+                } else if (match[3] !== undefined) {
+                    elements.push(<KatexBlock key={`block-${segIndex}-${start}`} math={match[3].trim()} />);
+                } else if (match[4] !== undefined && isValidInlineDollarMath(match[4], text, start + raw.length)) {
+                    elements.push(<KatexInline key={`inline-${segIndex}-${start}`} math={match[4].trim()} />);
+                } else {
+                    // 不构成公式的 $...$（如金额）按普通文本输出
+                    pushText(raw, `text-${segIndex}-${start}`);
+                }
+
+                lastIndex = start + raw.length;
+            }
+
+            if (lastIndex < text.length) {
+                pushText(text.substring(lastIndex), `text-${segIndex}-${lastIndex}`);
+            }
+        };
+
+        // 先按块级 HTML 切分，HTML 块原样渲染，其余文本段走常规管线
+        const htmlBlockRegex = buildHtmlBlockRegex();
+        let cursor = 0;
+        let htmlMatch: RegExpExecArray | null;
+        let segIndex = 0;
+
+        while ((htmlMatch = htmlBlockRegex.exec(content)) !== null) {
+            if (htmlMatch.index > cursor) {
+                pushTextSegment(content.substring(cursor, htmlMatch.index), segIndex);
+                segIndex += 1;
+            }
+            elements.push(<HtmlBlock key={`html-${htmlMatch.index}`} html={htmlMatch[0]} />);
+            cursor = htmlMatch.index + htmlMatch[0].length;
+        }
+        if (cursor < content.length) {
+            pushTextSegment(content.substring(cursor), segIndex);
         }
 
         return elements;
     }, [content]);
 
     if (!content) {
-        return <div className={`markdown-content overflow-x-auto min-w-0 ${className}`}></div>;
+        return <div className={`markdown-content min-w-0 break-words ${className}`}></div>;
     }
 
+    // 容器不设滚动（overflow-x-auto 会使 overflow-y 一并变为 auto，
+    // 行内内容轻微溢出就出现滚动条），内容自然展开；长公式块自带横向滚动
     return (
         <div
-            className={`markdown-content overflow-x-auto min-w-0 ${className}`}
+            className={`markdown-content min-w-0 break-words ${className}`}
             style={{
                 lineHeight: '1.0',
                 margin: '0',

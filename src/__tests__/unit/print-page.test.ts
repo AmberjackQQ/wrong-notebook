@@ -21,20 +21,22 @@ describe('estimatePageCount', () => {
 });
 
 describe('getFooterTops', () => {
-    it('单页内容贴内容盒底部（考虑最小盒高）', () => {
-        const tops = getFooterTops(500, 1, 963);
-        expect(tops).toEqual([963 - PRINT_FOOTER_HEIGHT_PX]);
+    it('每一页的脚标都固定在该页纸张底部', () => {
+        expect(getFooterTops(1)).toEqual([PRINT_PAGE_CONTENT_HEIGHT_PX - PRINT_FOOTER_HEIGHT_PX]);
+        expect(getFooterTops(3)).toEqual([
+            PRINT_PAGE_CONTENT_HEIGHT_PX - PRINT_FOOTER_HEIGHT_PX,
+            PRINT_PAGE_CONTENT_HEIGHT_PX * 2 - PRINT_FOOTER_HEIGHT_PX,
+            PRINT_PAGE_CONTENT_HEIGHT_PX * 3 - PRINT_FOOTER_HEIGHT_PX,
+        ]);
     });
 
-    it('多页时各页脚标位于每页底部，最后一页贴内容底部', () => {
-        const h = PRINT_PAGE_CONTENT_HEIGHT_PX * 2 + 100;
-        const tops = getFooterTops(h, 3);
-        expect(tops[0]).toBe(PRINT_PAGE_CONTENT_HEIGHT_PX - PRINT_FOOTER_HEIGHT_PX);
-        expect(tops[1]).toBe(PRINT_PAGE_CONTENT_HEIGHT_PX * 2 - PRINT_FOOTER_HEIGHT_PX);
-        expect(tops[2]).toBe(h - PRINT_FOOTER_HEIGHT_PX);
+    it('合并排版（答案块原点不在页网格）时末页脚标由调用方显式指定', () => {
+        // 题干盒撑满一页（963px），合并后共 2 页：答案块末页脚标 = 全局第2页纸底 − 题干盒高
+        const lastTop = PRINT_PAGE_CONTENT_HEIGHT_PX * 2 - PRINT_FOOTER_HEIGHT_PX - 963;
+        expect(getFooterTops(1, lastTop)).toEqual([lastTop]);
     });
 
-    it('内容盒很小时不产生负值', () => {
-        expect(getFooterTops(10, 1)).toEqual([0]);
+    it('页数为 0 时返回空数组', () => {
+        expect(getFooterTops(0)).toEqual([]);
     });
 });
