@@ -631,6 +631,11 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
                                             >
                                                 {getMistakeStatusLabel(item.mistakeStatus, language)}
                                             </Badge>
+                                            {(item.questionText?.trim() || '').length > 0 && (
+                                                <Badge variant="outline" className="text-xs bg-cyan-50 border-cyan-200 text-cyan-700" title="已有识别出的题目文字内容">
+                                                    OCR
+                                                </Badge>
+                                            )}
                                             {(() => {
                                                 // 检查是否有解析内容（文本或图片）
                                                 const hasAnalysisText = (item.analysis?.trim() || '').length > 0;

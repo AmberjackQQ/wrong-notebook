@@ -56,6 +56,8 @@ function HomeContent() {
 
     // QR code scanner state
     const [showQRScanner, setShowQRScanner] = useState(false);
+    // 扫码记录打印：打印次数>0 时先弹框确认，确认前暂存扫码结果
+    const [pendingPrintScan, setPendingPrintScan] = useState<{ itemId: string; path: string; currentCount: number } | null>(null);
     // 扫码用途：find = 仅定位题目；print = 定位同时打印次数 +1
     const scanModeRef = useRef<"find" | "print">("find");
 
@@ -230,20 +232,51 @@ function HomeContent() {
         setClipboardImage(null);
     };
 
+    const incrementPrintCount = async (itemId: string, path: string) => {
+        try {
+            const result = await apiClient.post<{ id: string; printCount: number }>(`/api/error-items/${itemId}/print`, {});
+            frontendLogger.info('[Home]', 'Print count incremented via QR scan', { itemId, printCount: result.printCount });
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error);
+            frontendLogger.error('[Home]', 'Failed to increment print count via QR scan', { itemId, error: message });
+            alert(`打印次数更新失败：${message}`);
+        }
+        router.push(path);
+    };
+
     const handleQRScanSuccess = async (path: string) => {
         frontendLogger.info('[Home]', 'QR code scanned successfully', { path, mode: scanModeRef.current });
         setShowQRScanner(false);
         if (scanModeRef.current === "print") {
             const itemId = path.replace('/error-items/', '');
             try {
-                const result = await apiClient.post<{ id: string; printCount: number }>(`/api/error-items/${itemId}/print`, {});
-                frontendLogger.info('[Home]', 'Print count incremented via QR scan', { itemId, printCount: result.printCount });
+                const item = await apiClient.get<{ printCount?: number }>(`/api/error-items/${itemId}`);
+                if ((item.printCount ?? 0) === 0) {
+                    await incrementPrintCount(itemId, path);
+                    return;
+                }
+                // 已有打印记录：弹框确认，暂不跳转
+                setPendingPrintScan({ itemId, path, currentCount: item.printCount ?? 0 });
+                return;
             } catch (error: unknown) {
                 const message = error instanceof Error ? error.message : String(error);
-                frontendLogger.error('[Home]', 'Failed to increment print count via QR scan', { itemId, error: message });
-                alert(`打印次数更新失败：${message}`);
+                frontendLogger.error('[Home]', 'Failed to fetch item print count, navigating without increment', { itemId, error: message });
             }
         }
+        router.push(path);
+    };
+
+    const handleConfirmPrintIncrement = async () => {
+        if (!pendingPrintScan) return;
+        const { itemId, path } = pendingPrintScan;
+        setPendingPrintScan(null);
+        await incrementPrintCount(itemId, path);
+    };
+
+    const handleCancelPrintIncrement = () => {
+        if (!pendingPrintScan) return;
+        const { path } = pendingPrintScan;
+        setPendingPrintScan(null);
         router.push(path);
     };
 
@@ -653,6 +686,26 @@ function HomeContent() {
                 />
             )}
 
+            {/* 打印次数确认框：扫码的题目已有打印记录时询问是否 +1 */}
+            <Dialog open={!!pendingPrintScan} onOpenChange={(open) => { if (!open) handleCancelPrintIncrement(); }}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>记录已打印</DialogTitle>
+                        <DialogDescription>
+                            该题目已打印 {pendingPrintScan?.currentCount} 次，是否将打印次数加一？
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={handleCancelPrintIncrement}>
+                            取消
+                        </Button>
+                        <Button onClick={handleConfirmPrintIncrement}>
+                            加一
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
             <div className="container mx-auto p-4 space-y-8 pb-20">
                 {/* Header Section */}
                 <div className="flex justify-between items-start gap-4">
@@ -748,7 +801,7 @@ function HomeContent() {
                             >
                                 <div className="flex items-center gap-2">
                                     <QrCode className="h-5 w-5" />
-                                    <span>扫描二维码添加打印次数</span>
+                                    <span>记录已打印</span>
                                 </div>
                             </Button>
                         </>

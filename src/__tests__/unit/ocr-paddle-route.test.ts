@@ -119,6 +119,81 @@ describe('POST /api/ocr/paddle', () => {
         expect(init.body.get('model')).toBe('PaddleOCR-VL-1.6');
     });
 
+    it('HTML img 引用带 images 映射时内联为 data URL，无映射时剔除', async () => {
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            json: async () => ({ data: { jobId: 'job-img' } }),
+        });
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            json: async () => ({ data: { state: 'done', resultUrl: { jsonUrl: 'https://x/r.jsonl' } } }),
+        });
+        const resolvedSrc = 'data:image/jpeg;base64,QUJD';
+        const jsonl = JSON.stringify({
+            result: {
+                layoutParsingResults: [
+                    {
+                        markdown: {
+                            text: '<div style="text-align: center;"><img src="imgs/img_in_image_box_588_43_722_150.jpg" alt="Image" width="17%" /></div>\n\n未解析：<img src="imgs/missing.jpg" /> 与 ![远程](https://tmp/x.jpg)',
+                            images: { 'imgs/img_in_image_box_588_43_722_150.jpg': resolvedSrc },
+                        },
+                    },
+                ],
+            },
+        });
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            text: async () => jsonl,
+        });
+
+        const res = await POST(makeRequest({ image: DATA_URL }));
+        const body = await res.json();
+
+        expect(res.status).toBe(200);
+        // 有映射的相对路径被内联为 data URL
+        expect(body.markdown).toContain(`src="${resolvedSrc}"`);
+        expect(body.markdown).toContain('width="17%"');
+        // 无映射的 HTML img 与 markdown 引用均被剔除
+        expect(body.markdown).not.toContain('imgs/');
+        expect(body.markdown).not.toContain('<img src="imgs/missing.jpg"');
+        expect(body.markdown).not.toContain('![');
+    });
+
+    it('markdown 图片引用带 images 映射时同样内联', async () => {
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            json: async () => ({ data: { jobId: 'job-md-img' } }),
+        });
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            json: async () => ({ data: { state: 'done', resultUrl: { jsonUrl: 'https://x/r.jsonl' } } }),
+        });
+        const resolvedSrc = 'data:image/png;base64,WFla';
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            text: async () =>
+                JSON.stringify({
+                    result: {
+                        layoutParsingResults: [
+                            { markdown: { text: '看图：![fig](imgs/fig_1.jpg)', images: { 'imgs/fig_1.jpg': resolvedSrc } } },
+                        ],
+                    },
+                }),
+        });
+
+        const res = await POST(makeRequest({ image: DATA_URL }));
+        const body = await res.json();
+
+        expect(res.status).toBe(200);
+        expect(body.markdown).toBe(`看图：![fig](${resolvedSrc})`);
+    });
+
     it('http URL 走 JSON 模式', async () => {
         mockFetch.mockResolvedValueOnce({
             ok: true,

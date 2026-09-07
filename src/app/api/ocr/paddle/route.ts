@@ -26,14 +26,31 @@ interface PaddleJobResponse {
 interface PaddleJsonlLine {
     result?: {
         layoutParsingResults?: {
-            markdown?: { text?: string };
+            markdown?: {
+                text?: string;
+                // 相对路径（如 imgs/img_in_image_box_588_43_722_150.jpg）→ base64 data URL
+                images?: Record<string, string>;
+            };
         }[];
     };
 }
 
-// 去掉 markdown 中的图片引用（远程临时链接，离线不可用）
-function stripImageRefs(text: string): string {
-    return text.replace(/!\[[^\]]*\]\([^)]*\)/g, '').trim();
+// 处理 markdown 中的图片引用：
+// 1) 结果自带 images 映射时，把文本中的相对路径（HTML src 属性、markdown 链接）内联为
+//    base64 data URL，图片即可离线自包含渲染；
+// 2) 没有对应映射的引用仍剔除（远程临时链接，离线不可用）。
+function inlineImages(text: string, images?: Record<string, string>): string {
+    let result = text;
+    for (const [path, dataUrl] of Object.entries(images || {})) {
+        if (typeof dataUrl !== 'string' || !dataUrl) continue;
+        // 字面量全局替换：同一图片可能被引用多次
+        result = result.split(path).join(dataUrl);
+    }
+    // 剔除未解析的 markdown 图片引用（排除已内联的 data URL）
+    result = result.replace(/!\[[^\]]*\]\((?!data:)[^)]*\)/g, '');
+    // 剔除未解析的 HTML <img> 标签
+    result = result.replace(/<img[^>]*src=["'](?!data:)[^"']*["'][^>]*\/?>/g, '');
+    return result.trim();
 }
 
 function sleep(ms: number) {
@@ -149,7 +166,7 @@ export async function POST(req: Request) {
             const parsed = JSON.parse(trimmed) as PaddleJsonlLine;
             for (const page of parsed.result?.layoutParsingResults || []) {
                 const text = page.markdown?.text || '';
-                if (text) pages.push(stripImageRefs(text));
+                if (text) pages.push(inlineImages(text, page.markdown?.images));
             }
         }
 

@@ -55,6 +55,8 @@ function PrintPreviewContent() {
     const [enhanceAnswerImages, setEnhanceAnswerImages] = useState(true);
     // 将同一增强滤镜也应用到题目图片（含原始问题图片，默认开启）
     const [enhanceQuestionImages, setEnhanceQuestionImages] = useState(true);
+    // 勾选后点击“打印 / 保存 PDF”时，把本次所选题目的打印次数各 +1
+    const [incrementPrintCount, setIncrementPrintCount] = useState(false);
     // 增强强度参数，界面滑杆实时调整（contrast 0~5，brightness 0~3，即 CSS filter 全范围）
     const [enhanceContrast, setEnhanceContrast] = useState(0.8);
     const [enhanceBrightness, setEnhanceBrightness] = useState(0.82);
@@ -140,6 +142,15 @@ function PrintPreviewContent() {
     };
 
     const handlePrint = () => {
+        if (incrementPrintCount) {
+            // 勾选“打印次数加一”：为本次所选题目把打印次数各 +1
+            // 不阻塞打印流程，单条失败仅记录日志
+            selectedItems.forEach((item) => {
+                apiClient.post(`/api/error-items/${item.id}/print`, {}).catch((err: unknown) => {
+                    console.error(`Failed to increment print count for ${item.id}:`, err);
+                });
+            });
+        }
         window.print();
     };
 
@@ -297,6 +308,18 @@ function PrintPreviewContent() {
                                 <ArrowUpDown className="mr-2 h-4 w-4" />
                                 {sortOrder === "desc" ? "最新→最早" : "最早→最新"}
                             </Button>
+                            <label
+                                className="flex items-center gap-1.5 text-xs sm:text-sm cursor-pointer whitespace-nowrap text-muted-foreground hover:text-foreground transition-colors"
+                                title="勾选后，点击“打印 / 保存 PDF”时本次所选题目的打印次数各加一"
+                            >
+                                <input
+                                    type="checkbox"
+                                    checked={incrementPrintCount}
+                                    onChange={(e) => setIncrementPrintCount(e.target.checked)}
+                                    className="rounded border-gray-300 text-primary focus:ring-primary w-3.5 h-3.5 sm:w-4 sm:h-4"
+                                />
+                                {'记录每题打印次数'}
+                            </label>
                             <Button onClick={handlePrint} size="sm" className="whitespace-nowrap" disabled={selectedItems.length === 0}>
                                 {t.printPreview?.printButton || 'Print / Save PDF'}
                             </Button>
@@ -605,14 +628,13 @@ function PrintPreviewContent() {
                                 className={`print:relative ${reserveAnswerSpace ? "pb-20 print:pb-16" : "pb-6"}`}
                                 style={chunkMinHeightVar(stemPages)}
                             >
-                            {/* QR Code: 与题干同页（第1页），扫码定位本题 */}
+                            {/* QR Code: 与题干同页（第1页），扫码定位本题（打印需要足够大便于手机扫描） */}
                             {showQRCodes && (
                                 <div className="mb-4 print:flex print:items-center">
                                     <QRCodeDisplay
                                         errorItemId={item.id}
-                                        size={48}
+                                        size={96}
                                         showLabel={false}
-                                        className="print:scale-75 print:origin-left"
                                     />
                                 </div>
                             )}

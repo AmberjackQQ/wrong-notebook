@@ -1,7 +1,7 @@
-// A4 打印页面常量，与 globals.css 中 @page { size: A4; margin: 2cm } 对应
+// A4 打印页面常量，与 globals.css 中 @page { size: A4; margin: 0 20mm } 对应
 // 换算：1mm ≈ 96/25.4 px
 export const PRINT_PAGE_CONTENT_WIDTH_PX = 643; // 210mm - 2×20mm 可打印宽度
-export const PRINT_PAGE_CONTENT_HEIGHT_PX = 971; // 297mm - 2×20mm 可打印高度
+export const PRINT_PAGE_CONTENT_HEIGHT_PX = 1123; // 297mm 全高（上下边距为 0，无页眉页脚区域）
 export const PRINT_FOOTER_HEIGHT_PX = 24;
 // 题干块在打印时的最小盒高，留 8px 余量防止边框/外边距溢出产生空白页
 // 对应 page.tsx 中的 print:min-h-[963px]

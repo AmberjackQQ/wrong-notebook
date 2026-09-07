@@ -126,7 +126,8 @@
 @media print {
   @page {
     size: A4;
-    margin: 2cm;
+    /* 上下边距为 0：不保留页眉/页脚区域，单页可容纳更多内容；左右保留 20mm 便于阅读 */
+    margin: 0 20mm;
   }
 
   body {
