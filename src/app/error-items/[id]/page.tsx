@@ -64,6 +64,7 @@ interface ErrorItemDetail {
     paperLevel?: string | null;
     questionNumber?: string | null; // 题号
     answerTime?: string | null; // 答题时间
+    printCount?: number; // 打印次数
     geogebraCommands?: string | null;
     createdAt: string; // 添加导入时间字段
     updatedAt?: string;
@@ -87,6 +88,7 @@ export default function ErrorDetailPage() {
     const [notebookInput, setNotebookInput] = useState<string | null>(null);
     const [importTimeInput, setImportTimeInput] = useState("");
     const [questionNumberInput, setQuestionNumberInput] = useState("");
+    const [printCountInput, setPrintCountInput] = useState("");
 
     const [educationStage, setEducationStage] = useState<string | undefined>(undefined);
 
@@ -1055,6 +1057,7 @@ export default function ErrorDetailPage() {
             setGradeSemesterInput(item.gradeSemester || "");
             setPaperLevelInput(item.paperLevel || "模拟考试");
             setQuestionNumberInput(item.questionNumber || "");
+            setPrintCountInput(String(item.printCount ?? 0));
             // 格式化导入时间为 datetime-local 格式
             const importTime = new Date(item.createdAt);
             const formattedTime = importTime.toISOString().slice(0, 16); // YYYY-MM-DDTHH:mm
@@ -1070,6 +1073,7 @@ export default function ErrorDetailPage() {
                 gradeSemester: gradeSemesterInput,
                 paperLevel: paperLevelInput,
                 questionNumber: questionNumberInput || null,
+                printCount: Math.max(0, parseInt(printCountInput, 10) || 0),
             };
 
             // 只有在导入时间有值时才转换和添加
@@ -1100,6 +1104,7 @@ export default function ErrorDetailPage() {
         setGradeSemesterInput("");
         setPaperLevelInput("a");
         setQuestionNumberInput("");
+        setPrintCountInput("");
         setImportTimeInput("");
     };
 
@@ -1893,6 +1898,18 @@ export default function ErrorDetailPage() {
                                             </div>
                                             <div className="space-y-2">
                                                 <label className="text-sm text-muted-foreground">
+                                                    打印次数
+                                                </label>
+                                                <Input
+                                                    type="number"
+                                                    min={0}
+                                                    value={printCountInput}
+                                                    onChange={(e) => setPrintCountInput(e.target.value)}
+                                                    placeholder="0"
+                                                />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-sm text-muted-foreground">
                                                     导入时间
                                                 </label>
                                                 <Input
@@ -1951,6 +1968,12 @@ export default function ErrorDetailPage() {
                                                         hour: '2-digit',
                                                         minute: '2-digit'
                                                     })}
+                                                </span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-muted-foreground">打印次数:</span>
+                                                <span className="font-medium">
+                                                    {item.printCount ?? 0}
                                                 </span>
                                             </div>
                                         </div>

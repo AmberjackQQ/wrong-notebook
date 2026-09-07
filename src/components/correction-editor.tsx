@@ -122,19 +122,6 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
             .then(setNotebooks)
             .catch(err => console.error("Failed to fetch notebooks:", err));
 
-        // Fetch custom question sources
-        apiClient.get<{ id: string; name: string }[]>("/api/question-sources")
-            .then(sources => {
-                const sourceNames = sources.map(s => s.name);
-                setCustomQuestionSources(sourceNames);
-                frontendLogger.info('[CorrectionEditor]', 'Loaded custom question sources', { count: sourceNames.length });
-            })
-            .catch(err => {
-                console.error("Failed to fetch custom question sources:", err);
-                // If API fails (404), it's not a critical error, just means no custom sources yet
-                setCustomQuestionSources([]);
-            });
-
         apiClient.get<UserProfile>("/api/user")
             .then(user => {
                 if (user && user.educationStage && user.enrollmentYear) {
@@ -158,6 +145,23 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
             })
             .catch(err => console.error("Failed to fetch user info for grade calculation:", err));
     }, [language, initialPaperLevel, initialGradeSemester]);
+
+    // 获取自定义题目来源：跟随所选科目（笔记本）过滤，
+    // 只显示该笔记本内错题实际用过的来源，其他科目的来源不显示
+    useEffect(() => {
+        const url = data.subjectId
+            ? `/api/question-sources?subjectId=${encodeURIComponent(data.subjectId)}`
+            : "/api/question-sources";
+        apiClient.get<{ id: string; name: string }[]>(url)
+            .then(sources => {
+                setCustomQuestionSources(sources.map(s => s.name));
+            })
+            .catch(err => {
+                console.error("Failed to fetch custom question sources:", err);
+                // If API fails (404), it's not a critical error, just means no custom sources yet
+                setCustomQuestionSources([]);
+            });
+    }, [data.subjectId]);
 
     // Update paperLevel when initialPaperLevel becomes available (after localStorage loads)
     useEffect(() => {

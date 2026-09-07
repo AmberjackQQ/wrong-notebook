@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, Suspense, useEffect } from "react";
+import { useState, useRef, Suspense, useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { UploadZone } from "@/components/upload-zone";
@@ -56,6 +56,8 @@ function HomeContent() {
 
     // QR code scanner state
     const [showQRScanner, setShowQRScanner] = useState(false);
+    // 扫码用途：find = 仅定位题目；print = 定位同时打印次数 +1
+    const scanModeRef = useRef<"find" | "print">("find");
 
     // Cropper state
     const [croppingImage, setCroppingImage] = useState<string | null>(null);
@@ -228,9 +230,20 @@ function HomeContent() {
         setClipboardImage(null);
     };
 
-    const handleQRScanSuccess = (path: string) => {
-        frontendLogger.info('[Home]', 'QR code scanned successfully', { path });
+    const handleQRScanSuccess = async (path: string) => {
+        frontendLogger.info('[Home]', 'QR code scanned successfully', { path, mode: scanModeRef.current });
         setShowQRScanner(false);
+        if (scanModeRef.current === "print") {
+            const itemId = path.replace('/error-items/', '');
+            try {
+                const result = await apiClient.post<{ id: string; printCount: number }>(`/api/error-items/${itemId}/print`, {});
+                frontendLogger.info('[Home]', 'Print count incremented via QR scan', { itemId, printCount: result.printCount });
+            } catch (error: unknown) {
+                const message = error instanceof Error ? error.message : String(error);
+                frontendLogger.error('[Home]', 'Failed to increment print count via QR scan', { itemId, error: message });
+                alert(`打印次数更新失败：${message}`);
+            }
+        }
         router.push(path);
     };
 
@@ -719,11 +732,23 @@ function HomeContent() {
                                 variant="outline"
                                 size="lg"
                                 className="w-full h-auto py-4 text-base shadow-sm hover:shadow-md transition-all border hover:border-primary/50 hover:bg-accent/50"
-                                onClick={() => setShowQRScanner(true)}
+                                onClick={() => { scanModeRef.current = "find"; setShowQRScanner(true); }}
                             >
                                 <div className="flex items-center gap-2">
                                     <QrCode className="h-5 w-5" />
                                     <span>扫描二维码找题</span>
+                                </div>
+                            </Button>
+
+                            <Button
+                                variant="outline"
+                                size="lg"
+                                className="w-full h-auto py-4 text-base shadow-sm hover:shadow-md transition-all border hover:border-primary/50 hover:bg-accent/50"
+                                onClick={() => { scanModeRef.current = "print"; setShowQRScanner(true); }}
+                            >
+                                <div className="flex items-center gap-2">
+                                    <QrCode className="h-5 w-5" />
+                                    <span>扫描二维码添加打印次数</span>
                                 </div>
                             </Button>
                         </>
