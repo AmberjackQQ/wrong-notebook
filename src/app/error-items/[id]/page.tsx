@@ -27,7 +27,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { apiClient } from "@/lib/api-client";
 import { UserProfile, Notebook } from "@/types/api";
 import { inferSubjectFromName } from "@/lib/knowledge-tags";
-import { getMistakeStatusLabel, normalizeMistakeStatusForSave } from "@/lib/mistake-status";
+import { getMistakeStatusDisplayLabel, isKnownMistakeStatus, normalizeMistakeStatusForSave } from "@/lib/mistake-status";
 import { NotebookSelector } from "@/components/notebook-selector";
 import { GeogebraDemo } from "@/components/geogebra-demo";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -50,6 +50,7 @@ interface ErrorItemDetail {
     wrongAnswerText?: string | null;
     mistakeAnalysis?: string | null;
     mistakeStatus?: string | null;
+    customMistakeStatus?: string | null;
     knowledgePoints: string; // 保留兼容旧数据
     tags: KnowledgeTag[]; // 新的标签关联
     masteryLevel: number;
@@ -69,6 +70,28 @@ interface ErrorItemDetail {
     createdAt: string; // 添加导入时间字段
     updatedAt?: string;
 }
+
+// 错误解答原文的图片没有独立字段，以 Markdown 图片行（![name](dataUrl)）追加在文本末尾存储。
+// 编辑时把末尾连续的图片行解析回图片列表，避免 base64 长串出现在文本框里
+const WRONG_ANSWER_IMAGE_LINE = /^!\[([^\]]*)\]\((data:image\/[^)]+)\)$/;
+
+const splitWrongAnswerImages = (text: string) => {
+    const images: { id: string; dataUrl: string; name: string }[] = [];
+    const lines = (text || "").split("\n");
+    let end = lines.length;
+    while (end > 0) {
+        const m = lines[end - 1].match(WRONG_ANSWER_IMAGE_LINE);
+        if (!m) break;
+        images.unshift({ id: `wrong-answer-${end}`, dataUrl: m[2], name: m[1] || "图片" });
+        end -= 1;
+    }
+    return { text: lines.slice(0, end).join("\n").trimEnd(), images };
+};
+
+const joinWrongAnswerText = (text: string, images: { dataUrl: string; name: string }[]) => {
+    const imageLines = images.map((img) => `![${img.name}](${img.dataUrl})`).join("\n");
+    return [text.trimEnd(), imageLines].filter(Boolean).join("\n");
+};
 
 export default function ErrorDetailPage() {
     const params = useParams();
@@ -157,6 +180,14 @@ export default function ErrorDetailPage() {
                 setCustomQuestionSources([]);
             });
 
+        // Fetch 用户已用过的自定义作答状态（下拉框历史项）
+        apiClient.get<{ statuses: string[] }>("/api/error-items/mistake-statuses")
+            .then(res => setCustomMistakeStatuses(res.statuses || []))
+            .catch(err => {
+                console.error("Failed to fetch custom mistake statuses:", err);
+                setCustomMistakeStatuses([]);
+            });
+
         if (params.id) {
             fetchItem(params.id as string);
         }
@@ -227,7 +258,8 @@ export default function ErrorDetailPage() {
             setSourcePopoverOpen(false);
         } catch (error: any) {
             console.error("Failed to add custom source:", error);
-            alert(error.message || '添加失败，请稍后重试');
+            // 优先显示服务端返回的具体原因（apiClient 的 error.message 只有状态码摘要）
+            alert(error.data?.message || error.message || '添加失败，请稍后重试');
         } finally {
             setIsAddingSource(false);
         }
@@ -1126,8 +1158,14 @@ export default function ErrorDetailPage() {
 
     const [isEditingMistake, setIsEditingMistake] = useState(false);
     const [wrongAnswerInput, setWrongAnswerInput] = useState("");
+    const [wrongAnswerImagesInput, setWrongAnswerImagesInput] = useState<{ id: string; dataUrl: string; name: string }[]>([]);
     const [mistakeAnalysisInput, setMistakeAnalysisInput] = useState("");
     const [mistakeStatusInput, setMistakeStatusInput] = useState("unknown");
+    // 自定义作答状态：下拉框聚合历史自定义项，选择“＋ 自定义…”后输入新文字
+    const [customMistakeStatuses, setCustomMistakeStatuses] = useState<string[]>([]);
+    const [customStatusDraft, setCustomStatusDraft] = useState("");
+    const [isAddingCustomStatus, setIsAddingCustomStatus] = useState(false);
+    const statusBeforeCustomRef = useRef("unknown");
 
     // --- Question Handlers ---
     const startEditingQuestion = () => {
@@ -1171,9 +1209,10 @@ export default function ErrorDetailPage() {
         }
         setIsOcrRunning(true);
         try {
+            // OCR 路由内部最长轮询飞桨任务 5 分钟（300s），客户端超时必须大于它，否则任务未完成即被中止
             const result = await apiClient.post<{ markdown: string }>('/api/ocr/paddle', {
                 image,
-            });
+            }, { timeout: 320000 });
             setQuestionOcrText(result.markdown || '');
             // 识别结果直接填入题目文字编辑框（点击OCR即明确要用图片文字作为题目），
             // 点保存后持久化并显示在详情页；取消编辑可放弃
@@ -1185,7 +1224,11 @@ export default function ErrorDetailPage() {
             }
         } catch (error: any) {
             console.error('OCR failed:', error);
-            alert(`OCR 识别失败：${error?.data?.message || error?.message || '请稍后重试'}`);
+            const msg = error?.data?.message || error?.message || '';
+            const friendly = String(msg).includes('AI_TIMEOUT_ERROR')
+                ? '识别超时（题目较复杂或服务繁忙），请稍后重试'
+                : msg || '请稍后重试';
+            alert(`OCR 识别失败：${friendly}`);
         } finally {
             setIsOcrRunning(false);
         }
@@ -1390,33 +1433,74 @@ export default function ErrorDetailPage() {
     };
 
     // --- Mistake Analysis Handlers ---
+    const isCustomStatusValue = (v: string) => v !== "__custom__" && !isKnownMistakeStatus(v);
+
     const startEditingMistake = () => {
         if (item) {
-            setWrongAnswerInput(item.wrongAnswerText || "");
+            const { text, images } = splitWrongAnswerImages(item.wrongAnswerText || "");
+            setWrongAnswerInput(text);
+            setWrongAnswerImagesInput(images);
             setMistakeAnalysisInput(item.mistakeAnalysis || "");
-            setMistakeStatusInput(item.mistakeStatus || "unknown");
+            const custom = (item.customMistakeStatus || "").trim();
+            if (custom) {
+                setMistakeStatusInput(custom);
+                setCustomMistakeStatuses((prev) => (prev.includes(custom) ? prev : [...prev, custom]));
+            } else {
+                setMistakeStatusInput(item.mistakeStatus || "unknown");
+            }
             setIsEditingMistake(true);
         }
     };
 
+    // 选择“＋ 自定义…”时展开输入框；确定后把文字作为当前状态并加入历史项
+    const handleStatusSelectChange = (value: string) => {
+        if (value === "__custom__") {
+            statusBeforeCustomRef.current = mistakeStatusInput;
+            setCustomStatusDraft("");
+            setIsAddingCustomStatus(true);
+            return;
+        }
+        setIsAddingCustomStatus(false);
+        setMistakeStatusInput(value);
+    };
+
+    const confirmCustomStatus = () => {
+        const trimmed = customStatusDraft.trim();
+        if (!trimmed || trimmed === "__custom__") return;
+        setMistakeStatusInput(trimmed);
+        setCustomMistakeStatuses((prev) => (prev.includes(trimmed) ? prev : [...prev, trimmed]));
+        setCustomStatusDraft("");
+        setIsAddingCustomStatus(false);
+    };
+
+    const cancelCustomStatus = () => {
+        setMistakeStatusInput(statusBeforeCustomRef.current || "unknown");
+        setCustomStatusDraft("");
+        setIsAddingCustomStatus(false);
+    };
+
     const saveMistakeHandler = async () => {
         try {
-            const normalizedStatus = normalizeMistakeStatusForSave(
+            const isCustom = isCustomStatusValue(mistakeStatusInput);
+            const wrongAnswerText = joinWrongAnswerText(wrongAnswerInput, wrongAnswerImagesInput);
+            const nextStatus = isCustom ? mistakeStatusInput : normalizeMistakeStatusForSave(
                 mistakeStatusInput,
-                wrongAnswerInput
+                wrongAnswerText
             );
             await apiClient.put(`/api/error-items/${item?.id}`, {
-                wrongAnswerText: wrongAnswerInput,
+                wrongAnswerText,
                 mistakeAnalysis: mistakeAnalysisInput,
-                mistakeStatus: normalizedStatus,
+                mistakeStatus: nextStatus,
+                customMistakeStatus: isCustom ? mistakeStatusInput : "",
             });
             setIsEditingMistake(false);
             if (item) {
                 setItem({
                     ...item,
-                    wrongAnswerText: wrongAnswerInput,
+                    wrongAnswerText,
                     mistakeAnalysis: mistakeAnalysisInput,
-                    mistakeStatus: normalizedStatus,
+                    mistakeStatus: nextStatus,
+                    customMistakeStatus: isCustom ? mistakeStatusInput : null,
                 });
             }
         } catch (error) {
@@ -1428,8 +1512,11 @@ export default function ErrorDetailPage() {
     const cancelEditingMistake = () => {
         setIsEditingMistake(false);
         setWrongAnswerInput("");
+        setWrongAnswerImagesInput([]);
         setMistakeAnalysisInput("");
         setMistakeStatusInput("unknown");
+        setCustomStatusDraft("");
+        setIsAddingCustomStatus(false);
     };
 
     const saveNotes = async () => {
@@ -1621,7 +1708,7 @@ export default function ErrorDetailPage() {
                                                     {isOcrRunning ? (
                                                         <>
                                                             <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-                                                            识别中，可能需要1~2分钟…
+                                                            识别中，可能需要1~5分钟…
                                                         </>
                                                     ) : (
                                                         <>
@@ -2288,7 +2375,7 @@ export default function ErrorDetailPage() {
                                             <label className="text-sm text-muted-foreground">{t.editor?.mistakeStatus || '作答状态'}</label>
                                             <Select
                                                 value={mistakeStatusInput}
-                                                onValueChange={setMistakeStatusInput}
+                                                onValueChange={handleStatusSelectChange}
                                             >
                                                 <SelectTrigger>
                                                     <SelectValue />
@@ -2301,19 +2388,45 @@ export default function ErrorDetailPage() {
                                                     <SelectItem value="new_method">{t.editor?.mistakeStatuses?.newMethod || '新方法'}</SelectItem>
                                                     <SelectItem value="not_yet_ready">{t.editor?.mistakeStatuses?.notYetReady || '来不急做'}</SelectItem>
                                                     <SelectItem value="unknown">{t.editor?.mistakeStatuses?.unknown || '未判断'}</SelectItem>
+                                                    {customMistakeStatuses.map((s) => (
+                                                        <SelectItem key={s} value={s}>{s}</SelectItem>
+                                                    ))}
+                                                    <SelectItem value="__custom__">＋ 自定义…</SelectItem>
                                                 </SelectContent>
                                             </Select>
+                                            {isAddingCustomStatus && (
+                                                <div className="flex gap-2">
+                                                    <Input
+                                                        value={customStatusDraft}
+                                                        onChange={(e) => setCustomStatusDraft(e.target.value)}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Enter') {
+                                                                e.preventDefault();
+                                                                confirmCustomStatus();
+                                                            }
+                                                        }}
+                                                        placeholder="输入自定义作答状态文字"
+                                                        maxLength={20}
+                                                        autoFocus
+                                                    />
+                                                    <Button size="sm" onClick={confirmCustomStatus}>确定</Button>
+                                                    <Button size="sm" variant="outline" onClick={cancelCustomStatus}>取消</Button>
+                                                </div>
+                                            )}
                                         </div>
                                         <div className="space-y-2">
                                             <label className="text-sm text-muted-foreground">{t.editor?.wrongAnswerText || '错误解答原文'}</label>
-                                            <Textarea
+                                            <RichTextEditorWithImage
                                                 value={wrongAnswerInput}
-                                                onChange={(e) => {
-                                                    setWrongAnswerInput(e.target.value);
-                                                    if (e.target.value.trim()) setMistakeStatusInput('wrong_attempt');
+                                                onChange={(text, images) => {
+                                                    setWrongAnswerInput(text);
+                                                    setWrongAnswerImagesInput(images);
+                                                    // 已选自定义状态时不自动改判（枚举保持“有错解→做错了”的默认规则）
+                                                    if (text.trim() && !isCustomStatusValue(mistakeStatusInput)) setMistakeStatusInput('wrong_attempt');
                                                 }}
+                                                placeholder="Enter wrong answer..."
                                                 rows={5}
-                                                className="w-full font-mono text-sm"
+                                                existingImages={wrongAnswerImagesInput}
                                             />
                                         </div>
                                         <div className="space-y-2">
@@ -2341,7 +2454,7 @@ export default function ErrorDetailPage() {
                                 ) : (
                                     <div className="space-y-4">
                                         <Badge variant={item.mistakeStatus === 'wrong_attempt' ? 'default' : 'secondary'}>
-                                            {getMistakeStatusLabel(item.mistakeStatus, language)}
+                                            {getMistakeStatusDisplayLabel(item.mistakeStatus, item.customMistakeStatus, language)}
                                         </Badge>
                                         {item.wrongAnswerText ? (
                                             <div>

@@ -26,6 +26,12 @@ import {
 import { ArrowUpDown, ChevronDown, ChevronUp } from "lucide-react";
 import { QRCodeDisplay } from "@/components/qr-code-display";
 
+// CSSProperties 转内联 style 字符串（用于屏外克隆节点还原自然样式）
+const styleTextOf = (style: CSSProperties) =>
+    Object.entries(style)
+        .map(([k, v]) => `${k.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`)}:${v}`)
+        .join(";");
+
 function PrintPreviewContent() {
     const searchParams = useSearchParams();
     const { t } = useLanguage();
@@ -57,6 +63,8 @@ function PrintPreviewContent() {
     const [enhanceQuestionImages, setEnhanceQuestionImages] = useState(true);
     // 勾选后点击“打印 / 保存 PDF”时，把本次所选题目的打印次数各 +1
     const [incrementPrintCount, setIncrementPrintCount] = useState(false);
+
+    const [showAnswerTime, setShowAnswerTime] = useState(true);
     // 增强强度参数，界面滑杆实时调整（contrast 0~5，brightness 0~3，即 CSS filter 全范围）
     const [enhanceContrast, setEnhanceContrast] = useState(0.8);
     const [enhanceBrightness, setEnhanceBrightness] = useState(0.82);
@@ -64,6 +72,8 @@ function PrintPreviewContent() {
     const [chunkPages, setChunkPages] = useState<Record<string, { pages: number; height: number }>>({});
     // 解析图片的自然宽度（onLoad 时记录），用于按图片大小决定缩放
     const [analysisNaturalWidths, setAnalysisNaturalWidths] = useState<Record<string, number>>({});
+    // 解析段防孤行修复方案（按题）：shrink=缩小首图塞进标题所在页；push=整段另起一页
+    const [analysisFixes, setAnalysisFixes] = useState<Record<string, { type: "shrink"; avail: number } | { type: "push" }>>({});
 
     useEffect(() => {
         fetchItems();
@@ -107,6 +117,8 @@ function PrintPreviewContent() {
             const params = new URLSearchParams(searchParams.toString());
             // 打印预览需要所有符合条件的数据，设置较大的 pageSize
             params.set("pageSize", String(PRINT_PREVIEW_PAGE_SIZE));
+            // 打印需渲染完整题目（含 OCR 内联图片），list 接口默认截断 questionText
+            params.set("full", "1");
             // 添加排序参数
             params.set("sortBy", sortBy);
             params.set("sortOrder", order);
@@ -127,6 +139,8 @@ function PrintPreviewContent() {
             const params = new URLSearchParams(searchParams.toString());
             // 打印预览需要所有符合条件的数据，设置较大的 pageSize
             params.set("pageSize", String(PRINT_PREVIEW_PAGE_SIZE));
+            // 打印需渲染完整题目（含 OCR 内联图片），list 接口默认截断 questionText
+            params.set("full", "1");
             // 添加排序参数
             params.set("sortBy", sortBy);
             params.set("sortOrder", sortOrder);
@@ -180,22 +194,91 @@ function PrintPreviewContent() {
             host.style.cssText = `position:absolute;left:-10000px;top:0;width:${PRINT_PAGE_CONTENT_WIDTH_PX}px;visibility:hidden;`;
             document.body.appendChild(host);
             const result: Record<string, { pages: number; height: number }> = {};
+            const fixes: Record<string, { type: "shrink"; avail: number } | { type: "push" }> = {};
             try {
                 for (const chunk of chunks) {
                     const key = chunk.getAttribute("data-print-chunk");
                     if (!key) continue;
                     const clone = chunk.cloneNode(true) as HTMLElement;
                     clone.querySelectorAll("[data-print-footer]").forEach((f) => f.remove());
+                    // 把上一轮“防孤行”缩小过的首图还原为自然尺寸：测量与决策必须基于未修复布局才能稳定收敛
+                    clone.querySelectorAll<HTMLImageElement>("img[data-print-shrink]").forEach((img) => {
+                        img.setAttribute("style", styleTextOf(getAnalysisImageStyle(analysisImageScale, img.naturalWidth || undefined)));
+                    });
                     host.appendChild(clone);
                     await Promise.all(Array.from(clone.querySelectorAll("img")).map(waitImage));
                     const height = clone.offsetHeight;
-                    result[key] = { pages: estimatePageCount(height), height };
+                    let pages = estimatePageCount(height);
+
+                    // 解析段防孤行：按不可拆分单元（标题/图片容器）模拟打印分页，
+                    // 若“解析：”标题与第一张解析图被分到不同页，则缩小首图塞进标题所在页
+                    //（剩余空间太小缩图不可读时，改为整段另起一页）
+                    if (key.endsWith(":answer")) {
+                        const PAGE_H = PRINT_PAGE_CONTENT_HEIGHT_PX;
+                        const units = Array.from(clone.querySelectorAll<HTMLElement>("[data-frag]")).map((el) => ({
+                            kind: el.getAttribute("data-frag") || "",
+                            idx: Number(el.getAttribute("data-frag-index") || "0"),
+                            top: el.offsetTop,
+                            height: el.offsetHeight,
+                        }));
+                        const simulate = (list: typeof units, mode: { type: "none" } | { type: "shrink"; avail: number } | { type: "push" }) => {
+                            let y = 0;
+                            const placed: { kind: string; idx: number; top: number; height: number; page: number }[] = [];
+                            for (const u of list) {
+                                let top = Math.max(u.top, y);
+                                let h = u.height;
+                                if (mode.type === "push" && u.kind === "analysis-heading") {
+                                    top = (Math.floor(top / PAGE_H) + 1) * PAGE_H;
+                                } else if (mode.type === "shrink" && u.kind === "analysis-image" && u.idx === 0) {
+                                    h = mode.avail + 2; // 容器高 = 图片高 + 上下边框
+                                }
+                                const pageTop = Math.floor(top / PAGE_H) * PAGE_H;
+                                if (top + h > pageTop + PAGE_H) top = pageTop + PAGE_H;
+                                y = top + h;
+                                placed.push({ kind: u.kind, idx: u.idx, top, height: h, page: Math.floor(top / PAGE_H) });
+                            }
+                            return placed;
+                        };
+                        const pass1 = simulate(units, { type: "none" });
+                        const heading = pass1.find((p) => p.kind === "analysis-heading");
+                        const img0Placed = pass1.find((p) => p.kind === "analysis-image" && p.idx === 0);
+                        const img0Unit = units.find((u) => u.kind === "analysis-image" && u.idx === 0);
+                        if (heading && img0Placed && img0Unit && img0Placed.page > heading.page) {
+                            const pageBottom = (heading.page + 1) * PAGE_H;
+                            const imgTopIfFits = Math.max(img0Unit.top, heading.top + heading.height);
+                            const avail = pageBottom - imgTopIfFits - 10; // 余量：容器边框/取整误差
+                            const fix = avail >= 140 ? ({ type: "shrink", avail } as const) : ({ type: "push" } as const);
+                            // 缩小首图后其后内容自然位置整体上移，修正后模拟得到修复布局的真实页数
+                            const delta = fix.type === "shrink" ? img0Unit.height - (fix.avail + 2) : 0;
+                            const units2 = units.map((u) => (u.top > img0Unit.top ? { ...u, top: u.top - delta } : u));
+                            const pass2 = simulate(units2, fix);
+                            const last = pass2[pass2.length - 1];
+                            pages = Math.max(1, Math.ceil((last ? last.top + last.height : height) / PAGE_H));
+                            fixes[key.slice(0, -":answer".length)] = fix;
+                        }
+                    }
+                    result[key] = { pages, height };
                     clone.remove();
                 }
             } finally {
                 host.remove();
             }
-            if (!cancelled) setChunkPages(result);
+            if (!cancelled) {
+                setChunkPages(result);
+                setAnalysisFixes((prev) => {
+                    let changed = false;
+                    const next = { ...prev };
+                    for (const [id, fix] of Object.entries(fixes)) {
+                        const cur = prev[id];
+                        const same = cur && cur.type === fix.type && (fix.type === "push" || (cur.type === "shrink" && Math.abs(cur.avail - fix.avail) <= 1));
+                        if (!same) {
+                            next[id] = fix;
+                            changed = true;
+                        }
+                    }
+                    return changed ? next : prev;
+                });
+            }
         };
         measure();
         return () => {
@@ -444,6 +527,18 @@ function PrintPreviewContent() {
                                 />
                                 {t.printPreview?.showAnswers || 'Show Answers'}
                             </label>
+                            <label
+                                className="flex items-center gap-1.5 text-xs sm:text-sm cursor-pointer whitespace-nowrap hover:text-primary transition-colors"
+                                title="勾选后在打印页“答题一：”标题后面显示该题的答题一时间（不另起一行）"
+                            >
+                                <input
+                                    type="checkbox"
+                                    checked={showAnswerTime}
+                                    onChange={(e) => setShowAnswerTime(e.target.checked)}
+                                    className="rounded border-gray-300 text-primary focus:ring-primary w-3.5 h-3.5 sm:w-4 sm:h-4"
+                                />
+                                {'答题一时间'}
+                            </label>
                             <label className="flex items-center gap-1.5 text-xs sm:text-sm cursor-pointer whitespace-nowrap hover:text-primary transition-colors">
                                 <input
                                     type="checkbox"
@@ -597,6 +692,7 @@ function PrintPreviewContent() {
                     //（题干撑满页底后只剩 8px 空隙，后续内容总是落到下一页，页数按两块之和计）
                     const stemInfo = chunkPages[`${item.id}:stem`];
                     const answerChunkInfo = chunkPages[`${item.id}:answer`];
+                    const analysisFix = analysisFixes[item.id];
                     const answerRendered = showQuestionHeader || showAnswers || showAnalysis;
                     const broken = showAnswers || showAnalysis;
                     const stemPages = stemInfo?.pages ?? 1;
@@ -755,7 +851,20 @@ function PrintPreviewContent() {
                                 return hasAnswerText || hasAnswerImages;
                             })() && (
                                 <div className="mb-4">
-                                    <h3 className="font-semibold mb-2">{t.printPreview?.referenceAnswer || '答题一'}:</h3>
+                                    <h3 data-frag="answer-heading" className="font-semibold mb-2">
+                                        {t.printPreview?.referenceAnswer || '答题一'}:
+                                        {showAnswerTime && item.answerTime && (
+                                            <span className="font-normal text-xs text-muted-foreground ml-2">
+                                                {new Date(item.answerTime).toLocaleString('zh-CN', {
+                                                    year: 'numeric',
+                                                    month: '2-digit',
+                                                    day: '2-digit',
+                                                    hour: '2-digit',
+                                                    minute: '2-digit'
+                                                })}
+                                            </span>
+                                        )}
+                                    </h3>
                                     {item.answerText && <MarkdownRenderer content={item.answerText} />}
                                     {/* Answer Images */}
                                     {item.answerImages && (() => {
@@ -765,7 +874,7 @@ function PrintPreviewContent() {
                                                 return (
                                                     <div className={`mt-4 grid ${fitImagesToPage ? "grid-cols-1" : "grid-cols-2"} gap-3`}>
                                                         {images.map((img: any, idx: number) => (
-                                                            <div key={idx} className="break-inside-avoid" style={{ width: '100%' }}>
+                                                            <div key={idx} data-frag="answer-image" className="break-inside-avoid" style={{ width: '100%' }}>
                                                                 <img
                                                                     src={img.dataUrl}
                                                                     alt={img.name || `答案图片 ${idx + 1}`}
@@ -799,8 +908,8 @@ function PrintPreviewContent() {
                                 }
                                 return hasAnalysisText || hasAnalysisImages;
                             })() && (
-                                <div className="mb-4">
-                                    <h3 className="font-semibold mb-2">{t.printPreview?.analysis || 'Analysis'}:</h3>
+                                <div className={`mb-4 ${analysisFix?.type === "push" ? "print:break-before-page" : ""}`}>
+                                    <h3 data-frag="analysis-heading" className="font-semibold mb-2">{t.printPreview?.analysis || 'Analysis'}:</h3>
                                     {item.analysis && <MarkdownRenderer content={item.analysis} />}
                                     {/* Analysis Images */}
                                     {item.analysisImages && (() => {
@@ -811,13 +920,19 @@ function PrintPreviewContent() {
                                                     <div className={`mt-4 grid ${fitImagesToPage ? "grid-cols-1" : "grid-cols-2"} gap-3`}>
                                                         {images.map((img: any, idx: number) => {
                                                             const widthKey = `${item.id}:analysis:${idx}`;
+                                                            const shrinkFirst = analysisFix?.type === "shrink" && idx === 0;
                                                             return (
-                                                                <div key={idx} className="break-inside-avoid" style={{ width: '100%' }}>
+                                                                <div key={idx} data-frag="analysis-image" data-frag-index={idx} className="break-inside-avoid" style={{ width: '100%' }}>
                                                                     <img
                                                                         src={img.dataUrl}
                                                                         alt={img.name || `解析图片 ${idx + 1}`}
                                                                         className="h-auto rounded border"
-                                                                        style={getAnalysisImageStyle(analysisImageScale, analysisNaturalWidths[widthKey])}
+                                                                        style={
+                                                                            shrinkFirst
+                                                                                ? { height: `${analysisFix.avail}px`, width: 'auto', maxWidth: '100%', display: 'block', margin: '0 auto' }
+                                                                                : getAnalysisImageStyle(analysisImageScale, analysisNaturalWidths[widthKey])
+                                                                        }
+                                                                        data-print-shrink={shrinkFirst ? widthKey : undefined}
                                                                         onLoad={(e) => {
                                                                             const natural = e.currentTarget.naturalWidth;
                                                                             setAnalysisNaturalWidths((prev) =>

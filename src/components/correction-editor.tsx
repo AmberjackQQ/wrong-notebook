@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Save, RefreshCw, Loader2, Box, Plus, X, ChevronDown } from "lucide-react";
+import { Save, Loader2, Box, Plus, X, ChevronDown, ScanText } from "lucide-react";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { frontendLogger } from "@/lib/frontend-logger";
 import { MarkdownRenderer } from "@/components/markdown-renderer";
@@ -19,8 +19,6 @@ import { apiClient } from "@/lib/api-client";
 import { UserProfile, Notebook } from "@/types/api";
 import { inferSubjectFromName } from "@/lib/knowledge-tags";
 import { normalizeMistakeStatusForSave, type MistakeStatus } from "@/lib/mistake-status";
-import type { ReanswerQuestionResult } from "@/lib/ai/types";
-import { buildReanswerRequestBody } from "@/lib/reanswer-request";
 import { GeogebraDemo } from "@/components/geogebra-demo";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { RichTextEditorWithImage } from "@/components/rich-text-editor-with-image";
@@ -47,14 +45,7 @@ interface CorrectionEditorProps {
     aiTimeout?: number;
 }
 
-type ReanswerErrorMessages = {
-    default?: string;
-    authError?: string;
-    connectionFailed?: string;
-    responseError?: string;
-};
-
-export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, initialSubjectId, initialPaperLevel, initialGradeSemester, aiTimeout }: CorrectionEditorProps) {
+export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, initialSubjectId, initialPaperLevel, initialGradeSemester }: CorrectionEditorProps) {
     // Get current time in ISO format for default answer time
     const getCurrentTime = () => new Date().toISOString();
 
@@ -78,7 +69,7 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
         gradeSemesterInState: initialGradeSemester || ""
     });
     const { t, language } = useLanguage();
-    const [isReanswering, setIsReanswering] = useState(false);
+    const [isOcrRunning, setIsOcrRunning] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [isAnalyzingGeogebra, setIsAnalyzingGeogebra] = useState(false);
     const [geogebraError, setGeogebraError] = useState<string | null>(null);
@@ -187,67 +178,36 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
         }
     }, [initialGradeSemester, hasInitializedGradeSemester]);
 
-    // 重新解题函数
-    const handleReanswer = async () => {
-        if (!data.questionText.trim()) {
-            alert(t.editor.enterQuestionFirst || 'Please enter question text first');
+    // OCR 识别题目图片：与错题详情页的同名功能一致——
+    // 用飞桨 PaddleOCR 识别原始图片中的文字，结果直接填入题目文字编辑框
+    const handleOcrQuestionImage = async () => {
+        if (!imagePreview) {
+            alert('没有可识别的题目图片');
             return;
         }
 
-        setIsReanswering(true);
+        setIsOcrRunning(true);
         try {
-            const requestBody = buildReanswerRequestBody({
-                questionText: data.questionText,
-                language,
-                subject: data.subject,
-                imagePreview,
-                gradeSemester: data.gradeSemester,
-            });
-
-            if (requestBody.imageBase64) {
-                console.log("[Reanswer] Sending image + text (Image available for mistake analysis)");
+            // OCR 路由内部最长轮询飞桨任务 5 分钟（300s），客户端超时必须大于它，否则任务未完成即被中止
+            const result = await apiClient.post<{ markdown: string }>('/api/ocr/paddle', {
+                image: imagePreview,
+            }, { timeout: 320000 });
+            if (result.markdown) {
+                // 识别结果直接填入题目文字（点击OCR即明确要用图片文字作为题目），保存时持久化
+                setData(prev => ({ ...prev, questionText: result.markdown }));
             } else {
-                console.log("[Reanswer] Sending text only (No image available)");
+                alert('未识别到文字内容');
             }
-
-            frontendLogger.info('[Reanswer]', 'Sending request', { timeout: aiTimeout });
-
-            const result = await apiClient.post<ReanswerQuestionResult>("/api/reanswer", requestBody, { timeout: aiTimeout || 180000 });
-
-            setData(prev => ({
-                ...prev,
-                answerText: result.answerText,
-                analysis: result.analysis,
-                knowledgePoints: result.knowledgePoints,
-                wrongAnswerText: result.wrongAnswerText || "",
-                mistakeAnalysis: result.mistakeAnalysis || "",
-                mistakeStatus: normalizeMistakeStatusForSave(
-                    result.mistakeStatus,
-                    result.wrongAnswerText
-                ),
-            }));
-
-            alert(t.editor.reanswerSuccess || '✅ Answer and analysis updated!');
         } catch (error: unknown) {
-            console.error("Reanswer failed:", error);
-            const apiError = error as { data?: { message?: string } };
-            const msg = apiError.data?.message || '';
-
-            const reanswerErrors: ReanswerErrorMessages = t.errors?.reanswer || {};
-            let errorText = reanswerErrors.default || 'Reanswer failed';
-
-            if (msg.includes('AI_AUTH_ERROR')) {
-                errorText = reanswerErrors.authError || t.errors?.AI_AUTH_ERROR || errorText;
-            } else if (msg.includes('AI_CONNECTION_FAILED')) {
-                errorText = reanswerErrors.connectionFailed || t.errors?.AI_CONNECTION_FAILED || errorText;
-            } else if (msg.includes('AI_RESPONSE_ERROR')) {
-                errorText = reanswerErrors.responseError || t.errors?.AI_RESPONSE_ERROR || errorText;
-            }
-
-            alert(errorText);
-
+            console.error('OCR failed:', error);
+            const apiError = error as { data?: { message?: string }; status?: number };
+            const msg = apiError.data?.message || (error instanceof Error ? error.message : '');
+            const friendly = msg.includes('AI_TIMEOUT_ERROR')
+                ? '识别超时（题目较复杂或服务繁忙），请稍后重试'
+                : msg || '请稍后重试';
+            alert(`OCR 识别失败：${friendly}`);
         } finally {
-            setIsReanswering(false);
+            setIsOcrRunning(false);
         }
     };
 
@@ -317,7 +277,8 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
             frontendLogger.info('[CorrectionEditor]', 'Custom question source added', { name: response.name });
         } catch (error: any) {
             console.error("Failed to add custom source:", error);
-            alert(error.message || '添加失败，请稍后重试');
+            // 优先显示服务端返回的具体原因（apiClient 的 error.message 只有状态码摘要）
+            alert(error.data?.message || error.message || '添加失败，请稍后重试');
         } finally {
             setIsAddingSource(false);
         }
@@ -548,24 +509,25 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
                         <Button
                             variant="default"
                             size="sm"
-                            onClick={handleReanswer}
-                            disabled={isReanswering || !data.questionText.trim()}
+                            onClick={handleOcrQuestionImage}
+                            disabled={isOcrRunning || !imagePreview}
+                            title={!imagePreview ? '没有可识别的题目图片' : undefined}
                             className="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-medium"
                         >
-                            {isReanswering ? (
+                            {isOcrRunning ? (
                                 <>
                                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                    {t.editor.reanswering || 'AI solving...'}
+                                    识别中，可能需要1~5分钟…
                                 </>
                             ) : (
                                 <>
-                                    <RefreshCw className="mr-2 h-4 w-4" />
-                                    {t.editor.reanswer || '🔄 Reanswer (based on corrected question)'}
+                                    <ScanText className="mr-2 h-4 w-4" />
+                                    OCR识别题目图片
                                 </>
                             )}
                         </Button>
                         <p className="text-xs text-muted-foreground">
-                            {t.editor.reanswerHint || '💡 If the question was misrecognized, correct it and click to regenerate answer'}
+                            💡 用飞桨 PaddleOCR 识别题目图片中的文字，识别结果将填入上方题目文字框
                         </p>
                     </div>
 

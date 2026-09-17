@@ -194,6 +194,133 @@ describe('POST /api/ocr/paddle', () => {
         expect(body.markdown).toBe(`看图：![fig](${resolvedSrc})`);
     });
 
+    it('images 值为纯 Base64（官方默认，不带 data: 前缀）时按扩展名补 MIME 前缀', async () => {
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            json: async () => ({ data: { jobId: 'job-raw-b64' } }),
+        });
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            json: async () => ({ data: { state: 'done', resultUrl: { jsonUrl: 'https://x/r.jsonl' } } }),
+        });
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            text: async () =>
+                JSON.stringify({
+                    result: {
+                        layoutParsingResults: [
+                            {
+                                markdown: {
+                                    text: '<img src="imgs/a.jpg" /> 与 ![b](imgs/b.png)',
+                                    images: { 'imgs/a.jpg': 'QUJD', 'imgs/b.png': 'WFla' },
+                                },
+                            },
+                        ],
+                    },
+                }),
+        });
+
+        const res = await POST(makeRequest({ image: DATA_URL }));
+        const body = await res.json();
+
+        expect(res.status).toBe(200);
+        expect(body.markdown).toContain('src="data:image/jpeg;base64,QUJD"');
+        expect(body.markdown).toContain('](data:image/png;base64,WFla)');
+    });
+
+    it('images 值为预签名 URL（AI Studio 实际行为）时下载并内联为 data URL', async () => {
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            json: async () => ({ data: { jobId: 'job-url-img' } }),
+        });
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            json: async () => ({ data: { state: 'done', resultUrl: { jsonUrl: 'https://x/r.jsonl' } } }),
+        });
+        const presigned = 'https://pplines-online.bj.bcebos.com/xxx/img_in_image_box_1.jpg?authorization=tok';
+        const jpegBytes = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x01, 0x02]);
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            text: async () =>
+                JSON.stringify({
+                    result: {
+                        layoutParsingResults: [
+                            {
+                                markdown: {
+                                    // 真实数据：text 中引用相对路径，映射值才是完整预签名 URL
+                                    text: '<div style="text-align: center;"><img src="imgs/img_in_image_box_1.jpg" alt="Image" /></div>',
+                                    images: { 'imgs/img_in_image_box_1.jpg': presigned },
+                                },
+                            },
+                        ],
+                    },
+                }),
+        });
+        // 第 4 次 fetch：下载图片（content-type 为 octet-stream，MIME 按扩展名判断）
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            headers: new Headers({ 'content-type': 'application/octet-stream' }),
+            arrayBuffer: async () => jpegBytes.buffer.slice(jpegBytes.byteOffset, jpegBytes.byteOffset + jpegBytes.byteLength),
+        });
+
+        const res = await POST(makeRequest({ image: DATA_URL }));
+        const body = await res.json();
+
+        expect(res.status).toBe(200);
+        const expectedDataUrl = `data:image/jpeg;base64,${jpegBytes.toString('base64')}`;
+        expect(body.markdown).toContain(`src="${expectedDataUrl}"`);
+        expect(body.markdown).not.toContain('pplines-online');
+    });
+
+    it('images 预签名 URL 下载失败时剔除该图片引用', async () => {
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            json: async () => ({ data: { jobId: 'job-url-fail' } }),
+        });
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            json: async () => ({ data: { state: 'done', resultUrl: { jsonUrl: 'https://x/r.jsonl' } } }),
+        });
+        const presigned = 'https://expired.example.com/xxx/a.jpg?tok=1';
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            text: async () =>
+                JSON.stringify({
+                    result: {
+                        layoutParsingResults: [
+                            {
+                                markdown: {
+                                    text: '<img src="imgs/a.jpg" alt="Image" />',
+                                    images: { 'imgs/a.jpg': presigned },
+                                },
+                            },
+                        ],
+                    },
+                }),
+        });
+        mockFetch.mockResolvedValueOnce({
+            ok: false,
+            status: 403,
+        });
+
+        const res = await POST(makeRequest({ image: DATA_URL }));
+        const body = await res.json();
+
+        expect(res.status).toBe(200);
+        expect(body.markdown).not.toContain('expired.example.com');
+        expect(body.markdown).not.toContain('<img');
+    });
+
     it('http URL 走 JSON 模式', async () => {
         mockFetch.mockResolvedValueOnce({
             ok: true,

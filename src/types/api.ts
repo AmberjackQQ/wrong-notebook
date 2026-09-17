@@ -61,6 +61,7 @@ export interface ErrorItem {
     wrongAnswerText?: string | null;
     mistakeAnalysis?: string | null;
     mistakeStatus?: 'not_attempted' | 'wrong_attempt' | 'unknown' | string | null;
+    customMistakeStatus?: string | null;
     knowledgePoints?: string | null;
 
     source?: string | null;

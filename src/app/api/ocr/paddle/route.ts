@@ -11,7 +11,8 @@ const logger = createLogger('api:ocr:paddle');
 const JOB_URL = 'https://paddleocr.aistudio-app.com/api/v2/ocr/jobs';
 // 轮询间隔可通过环境变量注入（单测用短间隔），默认与飞桨示例一致
 const POLL_INTERVAL_MS = Number(process.env.PADDLE_OCR_POLL_MS) || 5000;
-const MAX_POLL_MS = 180000;
+// AI Studio 高峰期任务排队可能超过 3 分钟，给足 5 分钟；客户端超时需大于此值
+const MAX_POLL_MS = 300000;
 
 interface PaddleJobResponse {
     data?: {
@@ -28,23 +29,64 @@ interface PaddleJsonlLine {
         layoutParsingResults?: {
             markdown?: {
                 text?: string;
-                // 相对路径（如 imgs/img_in_image_box_588_43_722_150.jpg）→ base64 data URL
+                // 相对路径（如 imgs/img_in_image_box_588_43_722_150.jpg）→ 图像内容。
+                // 实测 AI Studio 云服务返回临时预签名 URL（URL 返回模式），官方文档另有纯 Base64 模式
                 images?: Record<string, string>;
             };
         }[];
     };
 }
 
+const IMAGE_MIME_BY_EXT: Record<string, string> = {
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    png: 'image/png',
+    gif: 'image/gif',
+    webp: 'image/webp',
+    bmp: 'image/bmp',
+};
+
+function mimeForImage(refPath: string, contentType?: string | null): string {
+    const ext = refPath.slice(refPath.lastIndexOf('.') + 1).toLowerCase();
+    if (IMAGE_MIME_BY_EXT[ext]) return IMAGE_MIME_BY_EXT[ext];
+    if (contentType?.startsWith('image/')) return contentType.split(';')[0];
+    return 'image/jpeg';
+}
+
+// images 映射值的三种形态及处理：
+// 1) data URL → 直接使用；
+// 2) http(s) 预签名 URL（AI Studio 实际行为，有失效时间）→ 立即下载转 base64 data URL，
+//    实现离线自包含；下载失败时返回原值，交由 inlineImages 末尾的剔除逻辑移除（同样离线不可用）；
+//    注意其 content-type 常为 application/octet-stream，MIME 需按扩展名判断
+// 3) 纯 Base64（官方文档默认模式）→ 按扩展名补 MIME 前缀
+async function toInlineDataUrl(refPath: string, value: string): Promise<string> {
+    if (value.startsWith('data:')) return value;
+    if (/^https?:\/\//.test(value)) {
+        try {
+            const res = await fetch(value);
+            if (res.ok) {
+                const buf = Buffer.from(await res.arrayBuffer());
+                return `data:${mimeForImage(refPath, res.headers.get('content-type'))};base64,${buf.toString('base64')}`;
+            }
+            logger.warn({ refPath, status: res.status }, 'PaddleOCR image download failed');
+        } catch (error) {
+            logger.warn({ refPath, error }, 'PaddleOCR image download error');
+        }
+        return value;
+    }
+    return `data:${mimeForImage(refPath)};base64,${value}`;
+}
+
 // 处理 markdown 中的图片引用：
 // 1) 结果自带 images 映射时，把文本中的相对路径（HTML src 属性、markdown 链接）内联为
 //    base64 data URL，图片即可离线自包含渲染；
 // 2) 没有对应映射的引用仍剔除（远程临时链接，离线不可用）。
-function inlineImages(text: string, images?: Record<string, string>): string {
+async function inlineImages(text: string, images?: Record<string, string>): Promise<string> {
     let result = text;
-    for (const [path, dataUrl] of Object.entries(images || {})) {
-        if (typeof dataUrl !== 'string' || !dataUrl) continue;
+    for (const [path, image] of Object.entries(images || {})) {
+        if (typeof image !== 'string' || !image) continue;
         // 字面量全局替换：同一图片可能被引用多次
-        result = result.split(path).join(dataUrl);
+        result = result.split(path).join(await toInlineDataUrl(path, image));
     }
     // 剔除未解析的 markdown 图片引用（排除已内联的 data URL）
     result = result.replace(/!\[[^\]]*\]\((?!data:)[^)]*\)/g, '');
@@ -150,7 +192,7 @@ export async function POST(req: Request) {
             // pending / running：继续等待
         }
         if (!jsonUrl) {
-            return createErrorResponse('OCR 识别超时，请稍后重试', 504);
+            return createErrorResponse('OCR 识别超时（AI Studio 服务繁忙或题目较复杂），请稍后重试', 504);
         }
 
         // 下载 JSONL 结果，拼接每页 markdown 文本
@@ -166,7 +208,7 @@ export async function POST(req: Request) {
             const parsed = JSON.parse(trimmed) as PaddleJsonlLine;
             for (const page of parsed.result?.layoutParsingResults || []) {
                 const text = page.markdown?.text || '';
-                if (text) pages.push(inlineImages(text, page.markdown?.images));
+                if (text) pages.push(await inlineImages(text, page.markdown?.images));
             }
         }
 

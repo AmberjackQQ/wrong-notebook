@@ -1,5 +1,21 @@
 export type MistakeStatus = 'not_attempted' | 'wrong_attempt' | 'partially_wrong' | 'not_yet_ready' | 'unknown' | 'focus' | 'small_mistake' | 'new_method';
 
+// 系统内置作答状态枚举值（此外的 mistakeStatus 视为旧数据异常值；
+// 用户自定义状态文字存在 customMistakeStatus 字段，不入此列）
+export const MISTAKE_STATUS_OPTIONS: MistakeStatus[] = [
+    'not_attempted',
+    'wrong_attempt',
+    'partially_wrong',
+    'not_yet_ready',
+    'unknown',
+    'focus',
+    'small_mistake',
+    'new_method',
+];
+
+export const isKnownMistakeStatus = (status?: unknown): status is MistakeStatus =>
+    typeof status === 'string' && (MISTAKE_STATUS_OPTIONS as string[]).includes(status);
+
 export function normalizeMistakeStatus(status?: unknown): MistakeStatus {
     if (status === 'not_attempted' || status === 'wrong_attempt' || status === 'partially_wrong' || status === 'not_yet_ready' || status === 'unknown' || status === 'focus' || status === 'small_mistake' || status === 'new_method') {
         return status;
@@ -43,4 +59,15 @@ export function getMistakeStatusLabel(status?: string | null, language: 'zh' | '
         };
 
     return labels[normalized];
+}
+
+// 展示用：优先显示用户自定义状态文字，否则按枚举取标签
+export function getMistakeStatusDisplayLabel(
+    status?: string | null,
+    customStatus?: string | null,
+    language: 'zh' | 'en' = 'zh'
+) {
+    const custom = (customStatus || '').trim();
+    if (custom) return custom;
+    return getMistakeStatusLabel(status, language);
 }

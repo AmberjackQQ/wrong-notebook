@@ -81,7 +81,10 @@ export async function POST(req: Request) {
         });
 
         if (existing) {
-            return badRequest("Question source with this name already exists");
+            // 幂等返回已有来源而非 400：前端列表可按科目过滤（只含该科目用过的来源），
+            // 用户看不到全局已存在的来源而重复添加时，应直接选中它而非报错
+            logger.info({ sourceId: existing.id, name: existing.name }, 'Question source already exists, returning it');
+            return NextResponse.json(existing);
         }
 
         // 获取当前最大排序值

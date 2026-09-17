@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+    getMistakeStatusDisplayLabel,
     getMistakeStatusLabel,
+    isKnownMistakeStatus,
     normalizeMistakeStatus,
     normalizeMistakeStatusForSave,
 } from '@/lib/mistake-status';
@@ -35,5 +37,19 @@ describe('mistake status helpers', () => {
         expect(getMistakeStatusLabel('partially_wrong', 'en')).toBe('Partially wrong');
         expect(getMistakeStatusLabel('not_attempted', 'en')).toBe('Not attempted');
         expect(getMistakeStatusLabel('bad-value', 'zh')).toBe('未判断');
+    });
+
+    it('isKnownMistakeStatus 应识别枚举值', () => {
+        expect(isKnownMistakeStatus('wrong_attempt')).toBe(true);
+        expect(isKnownMistakeStatus('focus')).toBe(true);
+        expect(isKnownMistakeStatus('粗心看错条件')).toBe(false);
+        expect(isKnownMistakeStatus(null)).toBe(false);
+    });
+
+    it('展示标签应优先自定义文字，回退枚举标签', () => {
+        expect(getMistakeStatusDisplayLabel('wrong_attempt', '粗心看错条件', 'zh')).toBe('粗心看错条件');
+        expect(getMistakeStatusDisplayLabel('wrong_attempt', '  ', 'zh')).toBe('做错了');
+        expect(getMistakeStatusDisplayLabel('wrong_attempt', null, 'zh')).toBe('做错了');
+        expect(getMistakeStatusDisplayLabel('unknown', null, 'en')).toBe('Unknown');
     });
 });

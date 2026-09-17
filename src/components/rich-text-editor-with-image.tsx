@@ -16,6 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { X, ImageIcon, Monitor } from "lucide-react";
 import { Card } from "@/components/ui/card";
+import { Slider } from "@/components/ui/slider";
 
 interface PastedImage {
   id: string;
@@ -315,9 +316,10 @@ export function RichTextEditorWithImage({
     resetScreenshotState();
   };
 
-  // 设置预览缩放倍数（相对原始尺寸，限制 25%~500%），缩放后清除未完成的选区
+  // 设置预览缩放倍数（相对原始尺寸，限制 25%~500%，滑动条最小粒度 1%），
+  // 缩放后清除未完成的选区
   const changePreviewZoom = (target: number) => {
-    setPreviewZoom(Math.min(5, Math.max(0.25, Math.round(target * 10) / 10)));
+    setPreviewZoom(Math.min(5, Math.max(0.25, Math.round(target * 100) / 100)));
     setCropArea(null);
     selectionStartRef.current = null;
     isSelectingAreaRef.current = false;
@@ -450,20 +452,22 @@ export function RichTextEditorWithImage({
         <div className="fixed inset-0 flex items-center justify-center p-4 bg-black/50 z-50">
           <Card className="max-w-4xl w-full max-h-[90vh] overflow-auto p-4 space-y-3 shadow-2xl">
             <div className="text-sm font-medium">选择要裁剪的区域：</div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">缩放：</span>
-              <Button size="sm" variant="outline" onClick={() => changePreviewZoom(previewZoom - 0.5)} disabled={previewZoom <= 0.25}>
-                缩小
-              </Button>
-              <span className="text-xs w-12 text-center">{Math.round(previewZoom * 100)}%</span>
-              <Button size="sm" variant="outline" onClick={() => changePreviewZoom(previewZoom + 0.5)} disabled={previewZoom >= 5}>
-                放大
-              </Button>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-muted-foreground shrink-0">缩放：</span>
+              <Slider
+                value={[Math.round(previewZoom * 100)]}
+                onValueChange={(vals) => changePreviewZoom(vals[0] / 100)}
+                min={25}
+                max={500}
+                step={1}
+                className="flex-1 min-w-[120px]"
+              />
+              <span className="text-xs w-12 text-center shrink-0">{Math.round(previewZoom * 100)}%</span>
               <Button size="sm" variant="ghost" onClick={() => changePreviewZoom(1)} disabled={previewZoom === 1}>
                 重置
               </Button>
-              <span className="text-xs text-muted-foreground">100% 为原始尺寸，超出窗口部分可用滚动条查看</span>
             </div>
+            <div className="text-xs text-muted-foreground">拖动滑动条连续调整缩放（25%~500%），100% 为原始尺寸，超出窗口部分可用滚动条查看</div>
             <div
               className="relative inline-block"
               style={{ pointerEvents: 'auto', width: previewNaturalWidth ? `${previewNaturalWidth * previewZoom}px` : '100%' }}

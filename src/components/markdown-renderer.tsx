@@ -11,6 +11,9 @@ interface MarkdownRendererProps {
 // Simple inline markdown processor
 const processInlineMarkdown = (text: string): string => {
     return text
+        // Markdown 图片 ![alt](src) → <img>（PaddleOCR 结果中内联的 data URL 图片）；
+        // 必须在换行替换前处理（src 中虽无换行，但保持替换顺序清晰）
+        .replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, '<img src="$2" alt="$1" style="max-width: 100%; height: auto;" />')
         // Bold **text**
         .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
         // Italic *text*

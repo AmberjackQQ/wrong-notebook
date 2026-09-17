@@ -75,7 +75,7 @@ export async function PUT(
         }
 
         const body = await req.json();
-        const { knowledgePoints, gradeSemester, paperLevel, questionNumber, questionText, questionImages, originalImageUrl, answerText, answerImages, analysis, analysisImages, subjectId,  wrongAnswerText, mistakeAnalysis, mistakeStatus, geogebraCommands, createdAt, answerTime, printCount } = body;
+        const { knowledgePoints, gradeSemester, paperLevel, questionNumber, questionText, questionImages, originalImageUrl, answerText, answerImages, analysis, analysisImages, subjectId,  wrongAnswerText, mistakeAnalysis, mistakeStatus, customMistakeStatus, geogebraCommands, createdAt, answerTime, printCount } = body;
 
         logger.debug({ questionNumber, gradeSemester, paperLevel }, 'Received update request with metadata fields');
 
@@ -108,6 +108,8 @@ export async function PUT(
         if (analysisImages !== undefined) updateData.analysisImages = analysisImages || null;
         if (wrongAnswerText !== undefined) updateData.wrongAnswerText = wrongAnswerText || null;
         if (mistakeAnalysis !== undefined) updateData.mistakeAnalysis = mistakeAnalysis || null;
+        // 自定义作答状态文字：空串表示清除；mistakeStatus 枚举语义保持不变（展示时自定义优先）
+        if (customMistakeStatus !== undefined) updateData.customMistakeStatus = (customMistakeStatus || '').trim() || null;
         if (subjectId !== undefined) {
             // 验证目标错题本存在且属于该用户
             const targetSubject = await prisma.subject.findUnique({ where: { id: subjectId } });

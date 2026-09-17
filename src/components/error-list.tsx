@@ -24,7 +24,7 @@ import { ErrorItem, PaginatedResponse } from "@/types/api";
 import { apiClient } from "@/lib/api-client";
 import { Pagination } from "@/components/ui/pagination";
 import { DEFAULT_PAGE_SIZE } from "@/lib/constants/pagination";
-import { getMistakeStatusLabel } from "@/lib/mistake-status";
+import { getMistakeStatusDisplayLabel } from "@/lib/mistake-status";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ChevronDown as ChevronDownIcon } from "lucide-react";
 
@@ -629,7 +629,7 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
                                                             : "text-xs"
                                                 }
                                             >
-                                                {getMistakeStatusLabel(item.mistakeStatus, language)}
+                                                {getMistakeStatusDisplayLabel(item.mistakeStatus, item.customMistakeStatus, language)}
                                             </Badge>
                                             {(item.questionText?.trim() || '').length > 0 && (
                                                 <Badge variant="outline" className="text-xs bg-cyan-50 border-cyan-200 text-cyan-700" title="已有识别出的题目文字内容">

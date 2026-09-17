@@ -174,10 +174,23 @@ export async function GET(req: Request) {
             take: pageSize,
         });
 
+        // questionText 可能内联 OCR 识别出的 base64 图片（单个 data URL 可达数百 KB），
+        // wrongAnswerText 同理（编辑时可粘贴/截图图片，以 Markdown 图片行内联存储）。
+        // 列表页只用它们做非空判断/搜索（搜索走数据库端 contains），默认截断避免分页响应体膨胀；
+        // 打印预览等需要渲染完整题目的调用方传 full=1
+        const wantFull = searchParams.get("full") === "1";
+        const items = wantFull
+            ? errorItems
+            : errorItems.map((item) => ({
+                  ...item,
+                  questionText: (item.questionText || '').slice(0, 200),
+                  wrongAnswerText: (item.wrongAnswerText || '').slice(0, 200),
+              }));
+
         const totalPages = Math.ceil(total / pageSize);
 
         return NextResponse.json({
-            items: errorItems,
+            items,
             total,
             page,
             pageSize,
