@@ -136,7 +136,7 @@ function PracticeContent() {
                     <ArrowLeft className="mr-2 h-4 w-4" />
                     {t.common?.back || "返回"}
                 </Button>
-                <Link href="/">
+                <Link href="/upload">
                     <Button variant="ghost" size="icon">
                         <House className="h-5 w-5" />
                     </Button>

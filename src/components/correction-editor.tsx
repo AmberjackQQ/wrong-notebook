@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Save, Loader2, Box, Plus, X, ChevronDown, ScanText } from "lucide-react";
+import { Save, Loader2, Box, Plus, X, ChevronDown, ScanText, Sparkles } from "lucide-react";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { frontendLogger } from "@/lib/frontend-logger";
 import { MarkdownRenderer } from "@/components/markdown-renderer";
@@ -73,6 +73,8 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
     const [isSaving, setIsSaving] = useState(false);
     const [isAnalyzingGeogebra, setIsAnalyzingGeogebra] = useState(false);
     const [geogebraError, setGeogebraError] = useState<string | null>(null);
+    const [isSuggestingTags, setIsSuggestingTags] = useState(false);
+    const [tagsError, setTagsError] = useState<string | null>(null);
     const [newSourceName, setNewSourceName] = useState("");
     const [isAddingSource, setIsAddingSource] = useState(false);
     const [sourcePopoverOpen, setSourcePopoverOpen] = useState(false);
@@ -252,6 +254,54 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
             setGeogebraError("分析失败，请稍后重试");
         } finally {
             setIsAnalyzingGeogebra(false);
+        }
+    };
+
+    const handleSuggestTags = async () => {
+        if (!data.questionText.trim()) {
+            alert(t.editor.enterQuestionFirst || '请先输入题目文本');
+            return;
+        }
+
+        const subjectKey = inferSubjectFromName(notebooks.find(n => n.id === data.subjectId)?.name || null)
+            || inferSubjectFromName(data.subject || null)
+            || undefined;
+
+        setIsSuggestingTags(true);
+        setTagsError(null);
+        try {
+            const response = await fetch("/api/ai/tags", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    questionText: data.questionText,
+                    answerText: data.answerText,
+                    analysis: data.analysis,
+                    subject: subjectKey,
+                    gradeSemester: data.gradeSemester || undefined,
+                }),
+            });
+
+            const result = await response.json().catch(() => null);
+
+            if (!response.ok) {
+                throw new Error(result?.message || t.editor.tagsAiError || "知识点生成失败");
+            }
+
+            const tags: string[] = Array.isArray(result?.knowledgePoints) ? result.knowledgePoints : [];
+            if (tags.length === 0) throw new Error(t.editor.tagsAiError || "知识点生成失败");
+
+            // 与已输入标签合并去重，不丢用户手动输入项
+            setData(prev => ({
+                ...prev,
+                knowledgePoints: Array.from(new Set([...prev.knowledgePoints, ...tags])),
+            }));
+        } catch (error) {
+            console.error("Knowledge tags suggestion failed:", error);
+            const message = error instanceof Error ? error.message : null;
+            setTagsError(message || t.editor.tagsAiError || "知识点生成失败");
+        } finally {
+            setIsSuggestingTags(false);
         }
     };
 
@@ -532,7 +582,29 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
                     </div>
 
                     <div className="space-y-2">
-                        <Label>{t.editor.tags}</Label>
+                        <div className="flex items-center justify-between gap-2">
+                            <Label>{t.editor.tags}</Label>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-7 px-2.5 text-xs"
+                                onClick={handleSuggestTags}
+                                disabled={isSuggestingTags || !data.questionText.trim()}
+                            >
+                                {isSuggestingTags ? (
+                                    <>
+                                        <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                                        {t.editor.tagsGenerating || "生成中…"}
+                                    </>
+                                ) : (
+                                    <>
+                                        <Sparkles className="mr-1 h-3.5 w-3.5" />
+                                        {t.editor.tagsAiGenerate || "AI 生成"}
+                                    </>
+                                )}
+                            </Button>
+                        </div>
                         <TagInput
                             value={data.knowledgePoints}
                             onChange={(tags) => setData({ ...data, knowledgePoints: tags })}
@@ -541,6 +613,9 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
                             subject={inferSubjectFromName(notebooks.find(n => n.id === data.subjectId)?.name || null) || inferSubjectFromName(data.subject || null) || undefined}
                             gradeStage={educationStage}
                         />
+                        {tagsError && (
+                            <p className="text-xs text-red-500">{tagsError}</p>
+                        )}
                         <p className="text-xs text-muted-foreground">
                             {t.editor.tagsHint || "💡 Tag suggestions will appear as you type"}
                         </p>

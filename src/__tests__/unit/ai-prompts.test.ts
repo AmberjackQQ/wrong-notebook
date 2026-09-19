@@ -8,11 +8,14 @@ import {
     generateSimilarQuestionPrompt,
     generateReanswerPrompt,
     generateGradeInstruction,
+    generateKnowledgeTagsPrompt,
     gradeSemesterToDisplayName,
     gradeSemesterToGradeNumber,
+    getSubjectLabel,
     DEFAULT_ANALYZE_TEMPLATE,
     DEFAULT_SIMILAR_TEMPLATE,
     DEFAULT_REANSWER_TEMPLATE,
+    DEFAULT_KNOWLEDGE_TAGS_TEMPLATE,
 } from '@/lib/ai/prompts';
 
 describe('AI Prompts', () => {
@@ -390,6 +393,54 @@ describe('AI Prompts', () => {
             const prompt = generateAnalyzePrompt('zh');
             expect(prompt).toContain('<analysis>');
             expect(prompt).toMatch(/<analysis>[\s\S]*表格处理规则[\s\S]*<\/analysis>/);
+        });
+    });
+
+    describe('generateKnowledgeTagsPrompt', () => {
+        it('默认模板应导出且包含输出格式约束', () => {
+            expect(DEFAULT_KNOWLEDGE_TAGS_TEMPLATE).toBeDefined();
+            expect(DEFAULT_KNOWLEDGE_TAGS_TEMPLATE).toContain('<knowledge_points>');
+        });
+
+        it('应该替换题目与上下文变量', () => {
+            const prompt = generateKnowledgeTagsPrompt('解方程 x^2-5x+6=0', {
+                subject: '数学',
+                gradeSemester: '八年级下',
+                answerText: 'x=2 或 x=3',
+                analysis: '因式分解求解',
+                prefetchedTags: ['一元二次方程', '因式分解'],
+            });
+            expect(prompt).toContain('解方程 x^2-5x+6=0');
+            expect(prompt).toContain('数学');
+            expect(prompt).toContain('八年级下');
+            expect(prompt).toContain('x=2 或 x=3');
+            expect(prompt).toContain('因式分解求解');
+            expect(prompt).toContain('- 一元二次方程');
+            expect(prompt).toContain('- 因式分解');
+            expect(prompt).not.toContain('{{');
+        });
+
+        it('可选字段为空时应填占位文本', () => {
+            const prompt = generateKnowledgeTagsPrompt('题目内容');
+            expect(prompt).toContain('题目内容');
+            expect(prompt).toContain('（无）');
+            expect(prompt).toContain('（未指定）');
+        });
+
+        it('应支持自定义模板覆盖', () => {
+            const prompt = generateKnowledgeTagsPrompt('测试题目', {
+                subject: getSubjectLabel('math'),
+                customTemplate: '自定义模板：{{question_text}} / {{subject}}',
+            });
+            expect(prompt).toBe('自定义模板：测试题目 / 数学');
+            expect(prompt).not.toContain('标准知识点列表');
+        });
+
+        it('getSubjectLabel 应转换科目 key 并兼容未知值', () => {
+            expect(getSubjectLabel('math')).toBe('数学');
+            expect(getSubjectLabel('physics')).toBe('物理');
+            expect(getSubjectLabel('未知科目')).toBe('未知科目');
+            expect(getSubjectLabel(undefined)).toBeUndefined();
         });
     });
 });

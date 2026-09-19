@@ -55,8 +55,8 @@ test('Upload image, correct, save, and verify in notebook', async ({ page }) => 
         await expect(page.getByText('数学')).toBeVisible({ timeout: 5000 });
     }
 
-    // 3. Go back to Home for Upload
-    await page.goto('/');
+    // 3. Go back to Upload page
+    await page.goto('/upload');
     await page.waitForLoadState('networkidle');
 
     // 4. Upload Image

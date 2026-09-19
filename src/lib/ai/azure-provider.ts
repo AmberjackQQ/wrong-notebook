@@ -1,6 +1,6 @@
 import { AzureOpenAI } from "openai";
-import { AIService, ParsedQuestion, DifficultyLevel, ReanswerQuestionResult, GeogebraAnalysisResult } from "./types";
-import { generateAnalyzePrompt, generateSimilarQuestionPrompt, generateReanswerPrompt, generateGeogebraPrompt } from './prompts';
+import { AIService, ParsedQuestion, DifficultyLevel, ReanswerQuestionResult, GeogebraAnalysisResult, KnowledgeTagsOptions } from "./types";
+import { generateAnalyzePrompt, generateSimilarQuestionPrompt, generateReanswerPrompt, generateGeogebraPrompt, generateKnowledgeTagsPrompt, getSubjectLabel } from './prompts';
 import { getAppConfig } from '../config';
 import { safeParseParsedQuestion } from './schema';
 import { getMathTagsFromDB, getTagsFromDB } from './tag-service';
@@ -428,6 +428,58 @@ Knowledge Points: ${knowledgePoints.join(", ")}
             this.handleError(error);
             throw error;
         }
+    }
+
+    async suggestKnowledgeTags(questionText: string, options?: KnowledgeTagsOptions): Promise<string[]> {
+        const config = getAppConfig();
+        const subjectKey = options?.subject || '';
+        const prefetchedTags = subjectKey ? await getTagsFromDB(subjectKey) : [];
+        const prompt = generateKnowledgeTagsPrompt(questionText, {
+            answerText: options?.answerText,
+            analysis: options?.analysis,
+            subject: getSubjectLabel(subjectKey),
+            gradeSemester: options?.gradeSemester,
+            prefetchedTags,
+            customTemplate: config.prompts?.knowledgeTags,
+        });
+
+        logger.info({
+            provider: 'Azure OpenAI',
+            model: this.model,
+            deployment: this.deployment,
+            questionLength: questionText.length,
+            tagListSize: prefetchedTags.length,
+        }, 'Knowledge tags request');
+
+        try {
+            const response = await this.client.chat.completions.create({
+                model: this.deployment,
+                messages: [
+                    { role: "system", content: prompt },
+                    { role: "user", content: "请为上述题目标注知识点，只输出 <knowledge_points> 标签内容。" }
+                ],
+                max_tokens: 1024,
+            });
+
+            const text = response.choices[0]?.message?.content || '';
+            logger.debug({ rawResponse: text }, 'Knowledge tags raw response');
+
+            if (!text) throw new Error("Empty response from AI");
+            return this.parseKnowledgeTags(text);
+        } catch (error) {
+            logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'Error during knowledge tags suggestion');
+            this.handleError(error);
+            throw error;
+        }
+    }
+
+    private parseKnowledgeTags(text: string): string[] {
+        const raw = this.extractTag(text, 'knowledge_points') || '';
+        const tags = Array.from(new Set(
+            raw.split(/[,，\n]/).map((tag) => tag.trim()).filter(Boolean)
+        ));
+        if (tags.length === 0) throw new Error("AI 未返回有效的知识点标签");
+        return tags.slice(0, 8);
     }
 
     private handleError(error: unknown) {

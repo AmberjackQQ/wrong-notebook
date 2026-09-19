@@ -138,6 +138,7 @@ export interface AppConfig {
     prompts?: {
         analyze?: string;
         similar?: string;
+        knowledgeTags?: string;
     };
     timeouts?: {
         analyze?: number; // 毫秒

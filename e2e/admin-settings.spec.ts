@@ -13,6 +13,9 @@ test('Admin can configure OpenAI settings with multi-instance support', async ({
     // Wait for login to complete
     await page.waitForURL('**/', { timeout: 15000 });
 
+    // Settings entry lives on the upload page header (home is the AI chat page)
+    await page.goto('/upload');
+
     // 2. Open Settings
     await page.getByRole('button', { name: '设置' }).click();
 

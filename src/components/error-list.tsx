@@ -27,6 +27,13 @@ import { DEFAULT_PAGE_SIZE } from "@/lib/constants/pagination";
 import { getMistakeStatusDisplayLabel } from "@/lib/mistake-status";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ChevronDown as ChevronDownIcon } from "lucide-react";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
 
 interface ErrorListProps {
     subjectId?: string;
@@ -35,7 +42,6 @@ interface ErrorListProps {
 
 type KnowledgeFilterChange = {
     gradeSemester?: string;
-    chapter?: string;
     tags?: string[];
 };
 
@@ -47,7 +53,7 @@ interface FilterState {
     masteryFilter: "all" | "mastered" | "unmastered";
     timeFilter: "all" | "week" | "month";
     gradeFilter: string;
-    chapterFilter: string;
+    printCountFilter: string;
     paperLevelFilter: string;
     selectedTags: string[];
     search: string;
@@ -88,7 +94,7 @@ const getDefaultFilterState = (): FilterState => ({
     masteryFilter: "all",
     timeFilter: "all",
     gradeFilter: "",
-    chapterFilter: "",
+    printCountFilter: "1",
     paperLevelFilter: "all",
     selectedTags: [],
     search: "",
@@ -106,7 +112,7 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
     const [masteryFilter, setMasteryFilter] = useState<"all" | "mastered" | "unmastered">(initialFilterState.masteryFilter);
     const [timeFilter, setTimeFilter] = useState<"all" | "week" | "month">(initialFilterState.timeFilter);
     const [gradeFilter, setGradeFilter] = useState(initialFilterState.gradeFilter);
-    const [chapterFilter, setChapterFilter] = useState(initialFilterState.chapterFilter);
+    const [printCountFilter, setPrintCountFilter] = useState<string>(initialFilterState.printCountFilter);
     const [paperLevelFilter, setPaperLevelFilter] = useState<string>(initialFilterState.paperLevelFilter);
     const [selectedTags, setSelectedTags] = useState<string[]>(initialFilterState.selectedTags);
     const [expandedTags, setExpandedTags] = useState<Set<string>>(new Set());
@@ -134,7 +140,7 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
             masteryFilter,
             timeFilter,
             gradeFilter,
-            chapterFilter,
+            printCountFilter,
             paperLevelFilter,
             selectedTags,
             search,
@@ -142,7 +148,7 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
             sortOrder,
         };
         saveFilterState(filterState, subjectId);
-    }, [masteryFilter, timeFilter, gradeFilter, chapterFilter, paperLevelFilter, selectedTags, search, sortBy, sortOrder, subjectId]);
+    }, [masteryFilter, timeFilter, gradeFilter, printCountFilter, paperLevelFilter, selectedTags, search, sortBy, sortOrder, subjectId]);
 
     const handleExportPrint = () => {
         const params = new URLSearchParams();
@@ -158,7 +164,7 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
             params.append("tags", selectedTags.join(","));
         }
         if (gradeFilter) params.append("gradeSemester", gradeFilter);
-        if (chapterFilter) params.append("chapter", chapterFilter); // 章节筛选
+        if (printCountFilter !== "all") params.append("printCountLt", printCountFilter);
         if (paperLevelFilter !== "all") params.append("paperLevel", paperLevelFilter);
 
         // 如果是多选模式且有选中的题目，传递选中的题目ID
@@ -212,10 +218,9 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
         }
     };
 
-    const handleFilterChange = ({ gradeSemester, chapter, tags }: KnowledgeFilterChange) => {
-        // KnowledgeFilter 总是同时传递三个字段；undefined 表示"全部/未设置"
+    const handleFilterChange = ({ gradeSemester, tags }: KnowledgeFilterChange) => {
+        // KnowledgeFilter 总是同时传递字段；undefined 表示"全部/未设置"
         setGradeFilter(gradeSemester ?? "");
-        setChapterFilter(chapter ?? "");
         if (tags !== undefined) setSelectedTags(tags);
 
         setPage(1); // 筛选变化时重置页码
@@ -297,7 +302,7 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
     };
 
     // 追踪筛选条件是否变化（用于判断是否需要重置页码）
-    const prevFiltersRef = useRef({ search, masteryFilter, timeFilter, selectedTags, subjectId, gradeFilter, chapterFilter, paperLevelFilter, sortBy, sortOrder });
+    const prevFiltersRef = useRef({ search, masteryFilter, timeFilter, selectedTags, subjectId, gradeFilter, printCountFilter, paperLevelFilter, sortBy, sortOrder });
 
     // 获取自定义题目来源（限定当前笔记本内实际使用过的来源，其他科目的来源不显示）
     useEffect(() => {
@@ -326,13 +331,13 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
             prevFilters.selectedTags !== selectedTags ||
             prevFilters.subjectId !== subjectId ||
             prevFilters.gradeFilter !== gradeFilter ||
-            prevFilters.chapterFilter !== chapterFilter ||
+            prevFilters.printCountFilter !== printCountFilter ||
             prevFilters.paperLevelFilter !== paperLevelFilter ||
             prevFilters.sortBy !== sortBy ||
             prevFilters.sortOrder !== sortOrder;
 
         // 更新 ref
-        prevFiltersRef.current = { search, masteryFilter, timeFilter, selectedTags, subjectId, gradeFilter, chapterFilter, paperLevelFilter, sortBy, sortOrder };
+        prevFiltersRef.current = { search, masteryFilter, timeFilter, selectedTags, subjectId, gradeFilter, printCountFilter, paperLevelFilter, sortBy, sortOrder };
 
         if (filtersChanged && page !== 1) {
             // 筛选条件变化且不在第一页，重置到第一页（会再次触发此 effect）
@@ -342,7 +347,7 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
 
         // 正常请求数据
         fetchItems();
-    }, [page, search, masteryFilter, timeFilter, selectedTags, subjectId, gradeFilter, chapterFilter, paperLevelFilter, sortBy, sortOrder]);
+    }, [page, search, masteryFilter, timeFilter, selectedTags, subjectId, gradeFilter, printCountFilter, paperLevelFilter, sortBy, sortOrder]);
 
     const fetchItems = async () => {
         setLoading(true);
@@ -360,7 +365,7 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
                 params.append("tags", selectedTags.join(","));
             }
             if (gradeFilter) params.append("gradeSemester", gradeFilter);
-            if (chapterFilter) params.append("chapter", chapterFilter); // 章节筛选
+            if (printCountFilter !== "all") params.append("printCountLt", printCountFilter);
             if (paperLevelFilter !== "all") params.append("paperLevel", paperLevelFilter);
             // 排序参数
             params.append("sortBy", sortBy);
@@ -526,6 +531,19 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
                             </div>
                         </PopoverContent>
                     </Popover>
+
+                    {/* 打印次数筛选：只显示打印次数小于 N 的题目 */}
+                    <Select value={printCountFilter} onValueChange={setPrintCountFilter}>
+                        <SelectTrigger className="w-[150px] h-8">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">打印次数不限</SelectItem>
+                            {["1", "2", "3", "5", "10"].map(n => (
+                                <SelectItem key={n} value={n}>{`打印次数<${n}`}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
                 </div>
             </div>
 

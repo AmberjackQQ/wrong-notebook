@@ -642,3 +642,75 @@ export function generateReanswerPrompt(
     provider_hints: options?.providerHints || ''
   }).trim();
 }
+
+/**
+ * 知识点标签自动生成提示词
+ * 用于「添加错题」知识点框的 AI 生成按钮：从题目内容推断知识点标签，
+ * 优先从标准知识点列表中选择，输出 <knowledge_points> XML 标签
+ */
+export const DEFAULT_KNOWLEDGE_TAGS_TEMPLATE = `【角色与核心任务 (ROLE AND CORE TASK)】
+你是一位经验丰富的学科教师，任务是为一道题目标注知识点标签，用于错题本归档。
+
+【题目信息 (QUESTION INFO)】
+学科：{{subject}}
+年级学期：{{grade_semester}}
+
+【标准知识点列表 (STANDARD KNOWLEDGE POINTS)】
+{{knowledge_points_list}}
+
+【题目内容 (QUESTION)】
+{{question_text}}
+
+【答案内容 (ANSWER，可能为空)】
+{{answer_text}}
+
+【解析内容 (ANALYSIS，可能为空)】
+{{analysis}}
+
+【标注要求 (RULES)】
+1. 优先从标准知识点列表中选择最匹配的标签；列表确实没有匹配项时，才给出列表之外但准确简洁的知识点。
+2. 标注 1-8 个知识点，按相关程度从高到低排列；使用简体中文，每个知识点尽量简短（一般不超过 15 个字）。
+3. 只标注题目实际考查的知识点，不要标注解题步骤或过宽的学科名。
+
+【输出格式 (OUTPUT FORMAT)】
+你的响应必须只有以下一行标签内容，不要包含其他任何文字或解释：
+<knowledge_points>知识点1, 知识点2, 知识点3</knowledge_points>`;
+
+export interface KnowledgeTagsPromptOptions {
+  answerText?: string;
+  analysis?: string;
+  subject?: string;
+  gradeSemester?: string;
+  prefetchedTags?: string[];
+  customTemplate?: string;
+}
+
+// 知识标签的科目 key（getTagsFromDB 使用）→ 提示词展示用中文名
+const SUBJECT_KEY_LABELS: Record<string, string> = {
+  math: '数学', physics: '物理', chemistry: '化学', biology: '生物',
+  english: '英语', chinese: '语文', history: '历史', geography: '地理', politics: '政治',
+};
+
+export const getSubjectLabel = (key?: string): string | undefined =>
+  key ? (SUBJECT_KEY_LABELS[key] || key) : undefined;
+
+/**
+ * 生成知识点标签提示词
+ */
+export function generateKnowledgeTagsPrompt(
+  questionText: string,
+  options?: KnowledgeTagsPromptOptions
+): string {
+  const template = options?.customTemplate?.trim() || DEFAULT_KNOWLEDGE_TAGS_TEMPLATE;
+
+  return replaceVariables(template, {
+    subject: options?.subject || '（未指定）',
+    grade_semester: options?.gradeSemester || '（未指定）',
+    knowledge_points_list: options?.prefetchedTags?.length
+      ? options.prefetchedTags.map((tag) => `- ${tag}`).join('\n')
+      : '（无标准列表，请根据题目内容自行给出准确的知识点）',
+    question_text: questionText,
+    answer_text: options?.answerText?.trim() || '（无）',
+    analysis: options?.analysis?.trim() || '（无）',
+  }).trim();
+}

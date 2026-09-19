@@ -1,920 +1,299 @@
 "use client";
 
-import { useState, useRef, Suspense, useEffect } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { UploadZone } from "@/components/upload-zone";
-import { CorrectionEditor } from "@/components/correction-editor";
-import { ImageCropper } from "@/components/image-cropper";
-import { ParsedQuestion } from "@/lib/ai";
-import { UserWelcome } from "@/components/user-welcome";
-import { apiClient } from "@/lib/api-client";
-import { AnalyzeResponse, Notebook, AppConfig } from "@/types/api";
 import { Button } from "@/components/ui/button";
-import { useLanguage } from "@/contexts/LanguageContext";
-import { processImageFile } from "@/lib/image-utils";
-import { Upload, BookOpen, Tags, LogOut, BarChart3, PenLine, QrCode } from "lucide-react";
-import { SettingsDialog } from "@/components/settings-dialog";
-import { BroadcastNotification } from "@/components/broadcast-notification";
-import { signOut } from "next-auth/react";
-import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle,
-} from "@/components/ui/dialog";
-import { ProgressFeedback, ProgressStatus } from "@/components/ui/progress-feedback";
-import { frontendLogger } from "@/lib/frontend-logger";
-import { TextInputZone } from "@/components/text-input-zone";
-import { DirectTextEditor } from "@/components/direct-text-editor";
-import { QRCodeScanner } from "@/components/qr-code-scanner";
-
-function HomeContent() {
-    const [step, setStep] = useState<"upload" | "review">("upload");
-    const [analysisStep, setAnalysisStep] = useState<ProgressStatus>('idle');
-    const [progress, setProgress] = useState(0);
-    const [parsedData, setParsedData] = useState<ParsedQuestion | null>(null);
-    const [currentImage, setCurrentImage] = useState<string | null>(null);
-    const { t, language } = useLanguage();
-    const searchParams = useSearchParams();
-    const router = useRouter();
-    const initialNotebookId = searchParams.get("notebook");
-    const [notebooks, setNotebooks] = useState<{ id: string; name: string }[]>([]);
-    const [autoSelectedNotebookId, setAutoSelectedNotebookId] = useState<string | null>(null);
-    const [initialPaperLevel, setInitialPaperLevel] = useState<string | undefined>(undefined);
-
-    const [config, setConfig] = useState<AppConfig | null>(null);
-
-    // Input mode: "image" for photo upload, "text" for AI solve, "direct" for manual entry
-    const [inputMode, setInputMode] = useState<"image" | "text" | "direct">("image");
-
-    // Clipboard image detection state
-    const [clipboardImage, setClipboardImage] = useState<File | null>(null);
-    const [showClipboardDialog, setShowClipboardDialog] = useState(false);
-
-    // QR code scanner state
-    const [showQRScanner, setShowQRScanner] = useState(false);
-    // 扫码记录打印：打印次数>0 时先弹框确认，确认前暂存扫码结果
-    const [pendingPrintScan, setPendingPrintScan] = useState<{ itemId: string; path: string; currentCount: number } | null>(null);
-    // 扫码用途：find = 仅定位题目；print = 定位同时打印次数 +1
-    const scanModeRef = useRef<"find" | "print">("find");
-
-    // Cropper state
-    const [croppingImage, setCroppingImage] = useState<string | null>(null);
-    const [isCropperOpen, setIsCropperOpen] = useState(false);
-
-    // Timeout Config
-    const aiTimeout = config?.timeouts?.analyze || 180000;
-    const safetyTimeout = aiTimeout + 10000;
-
-    // Cleanup Blob URL to prevent memory leak
-    useEffect(() => {
-        return () => {
-            if (croppingImage) {
-                URL.revokeObjectURL(croppingImage);
-            }
-        };
-    }, [croppingImage]);
-
-    useEffect(() => {
-        // Load initial paper level from localStorage when notebook is selected
-        if (autoSelectedNotebookId) {
-            try {
-                const filterKey = `errorListFilters_${autoSelectedNotebookId}`;
-                const storedFilters = localStorage.getItem(filterKey);
-                if (storedFilters) {
-                    const filters = JSON.parse(storedFilters);
-                    if (filters.paperLevelFilter && filters.paperLevelFilter !== 'all') {
-                        setInitialPaperLevel(filters.paperLevelFilter);
-                        frontendLogger.info('[Home]', 'Loaded initial paper level from filters', {
-                            paperLevel: filters.paperLevelFilter,
-                            notebookId: autoSelectedNotebookId
-                        });
-                    }
-                }
-            } catch (error) {
-                console.error('Failed to load paper level from localStorage:', error);
-            }
-        }
-
-        // Fetch notebooks for auto-selection
-        apiClient.get<Notebook[]>("/api/notebooks")
-            .then(data => setNotebooks(data))
-            .catch(err => console.error("Failed to fetch notebooks:", err));
-
-        // Fetch settings for timeouts
-        apiClient.get<AppConfig>("/api/settings")
-            .then(data => {
-                setConfig(data);
-                if (data.timeouts?.analyze) {
-                    frontendLogger.info('[Config]', 'Loaded timeout settings', {
-                        analyze: data.timeouts.analyze
-                    });
-                }
-            })
-            .catch(err => console.error("Failed to fetch config:", err));
-    }, [autoSelectedNotebookId]);
-
-    // Simulate progress for smoother UX with timeout protection
-    useEffect(() => {
-        let interval: NodeJS.Timeout;
-        let timeout: NodeJS.Timeout;
-        if (analysisStep !== 'idle') {
-            setProgress(0);
-            interval = setInterval(() => {
-                setProgress(prev => {
-                    if (prev >= 90) return prev; // Cap at 90% until complete
-                    return prev + Math.random() * 10;
-                });
-            }, 500);
-
-            // Safety timeout: auto-reset after configurable time to prevent stuck overlay
-            timeout = setTimeout(() => {
-                console.warn('[Progress] Safety timeout triggered - resetting analysisStep');
-                setAnalysisStep('idle');
-            }, safetyTimeout);
-        }
-        return () => {
-            clearInterval(interval);
-            clearTimeout(timeout);
-        };
-    }, [analysisStep, safetyTimeout]);
-
-    const onImageSelect = (file: File) => {
-        const imageUrl = URL.createObjectURL(file);
-        setCroppingImage(imageUrl);
-        setIsCropperOpen(true);
-    };
-
-    // Check clipboard for images on mount
-    useEffect(() => {
-        const checkClipboardForImage = async () => {
-            try {
-                // Try to read from clipboard
-                if (navigator.clipboard && navigator.clipboard.read) {
-                    const clipboardItems = await navigator.clipboard.read();
-                    for (const item of clipboardItems) {
-                        for (const type of item.types) {
-                            if (type.startsWith('image/')) {
-                                const blob = await item.getType(type);
-                                frontendLogger.info('[Home]', 'Found image in clipboard, asking user');
-
-                                // Convert to File and store for user decision
-                                const file = new File([blob], "clipboard-image.jpg", { type: "image/jpeg" });
-                                setClipboardImage(file);
-                                setShowClipboardDialog(true);
-                                return; // Exit after finding first image
-                            }
-                        }
-                    }
-                    frontendLogger.info('[Home]', 'No image found in clipboard');
-                }
-            } catch (error) {
-                // Clipboard access denied or failed
-                frontendLogger.info('[Home]', 'Clipboard access denied or failed', {
-                    error: error instanceof Error ? error.message : String(error)
-                });
-            }
-        };
-
-        // Check clipboard after a short delay to ensure UI is ready
-        const timeoutId = setTimeout(() => {
-            checkClipboardForImage();
-        }, 500);
-
-        return () => clearTimeout(timeoutId);
-    }, [config, notebooks, initialNotebookId, autoSelectedNotebookId]);
-
-    // Handle user decision for clipboard image
-    const handleUseClipboardImage = () => {
-        if (!clipboardImage) return;
-
-        frontendLogger.info('[Home]', 'User chose to use clipboard image');
-        setShowClipboardDialog(false);
-
-        // Check if AI analysis is enabled
-        const useAI = config?.defaultUseAI ?? true;
-
-        if (useAI) {
-            handleAnalyze(clipboardImage);
-        } else {
-            // Skip AI analysis, go directly to review
-            const processImage = async () => {
-                try {
-                    const base64Image = await processImageFile(clipboardImage);
-                    setCurrentImage(base64Image);
-                    setParsedData({
-                        questionText: "",
-                        answerText: "",
-                        analysis: "",
-                        knowledgePoints: [],
-                        wrongAnswerText: "",
-                        mistakeAnalysis: "",
-                        mistakeStatus: "unknown",
-                        subject: (notebooks.find(n => n.id === (initialNotebookId || autoSelectedNotebookId))?.name as any) || "数学",
-                        requiresImage: true,
-                    });
-                    setStep("review");
-                } catch (error) {
-                    console.error('Failed to process clipboard image:', error);
-                    alert('图片处理失败，请重试');
-                }
-            };
-            processImage();
-        }
-    };
-
-    const handleRejectClipboardImage = () => {
-        frontendLogger.info('[Home]', 'User rejected clipboard image');
-        setShowClipboardDialog(false);
-        setClipboardImage(null);
-    };
-
-    const incrementPrintCount = async (itemId: string, path: string) => {
-        try {
-            const result = await apiClient.post<{ id: string; printCount: number }>(`/api/error-items/${itemId}/print`, {});
-            frontendLogger.info('[Home]', 'Print count incremented via QR scan', { itemId, printCount: result.printCount });
-        } catch (error: unknown) {
-            const message = error instanceof Error ? error.message : String(error);
-            frontendLogger.error('[Home]', 'Failed to increment print count via QR scan', { itemId, error: message });
-            alert(`打印次数更新失败：${message}`);
-        }
-        router.push(path);
-    };
-
-    const handleQRScanSuccess = async (path: string) => {
-        frontendLogger.info('[Home]', 'QR code scanned successfully', { path, mode: scanModeRef.current });
-        setShowQRScanner(false);
-        if (scanModeRef.current === "print") {
-            const itemId = path.replace('/error-items/', '');
-            try {
-                const item = await apiClient.get<{ printCount?: number }>(`/api/error-items/${itemId}`);
-                if ((item.printCount ?? 0) === 0) {
-                    await incrementPrintCount(itemId, path);
-                    return;
-                }
-                // 已有打印记录：弹框确认，暂不跳转
-                setPendingPrintScan({ itemId, path, currentCount: item.printCount ?? 0 });
-                return;
-            } catch (error: unknown) {
-                const message = error instanceof Error ? error.message : String(error);
-                frontendLogger.error('[Home]', 'Failed to fetch item print count, navigating without increment', { itemId, error: message });
-            }
-        }
-        router.push(path);
-    };
-
-    const handleConfirmPrintIncrement = async () => {
-        if (!pendingPrintScan) return;
-        const { itemId, path } = pendingPrintScan;
-        setPendingPrintScan(null);
-        await incrementPrintCount(itemId, path);
-    };
-
-    const handleCancelPrintIncrement = () => {
-        if (!pendingPrintScan) return;
-        const { path } = pendingPrintScan;
-        setPendingPrintScan(null);
-        router.push(path);
-    };
-
-    const handleCropComplete = async (croppedBlob: Blob) => {
-        setIsCropperOpen(false);
-        // Convert Blob to File
-        const file = new File([croppedBlob], "cropped-image.jpg", { type: "image/jpeg" });
-
-        // 根据设置决定是否使用AI分析，默认为true以保持向后兼容性
-        const useAI = config?.defaultUseAI ?? true;
-
-        frontendLogger.info('[HomeCropComplete]', 'AI analysis setting', {
-            defaultUseAI: config?.defaultUseAI,
-            useAI: useAI
-        });
-
-        if (useAI) {
-            // 使用AI分析，继续原有流程
-            handleAnalyze(file);
-        } else {
-            // 不使用AI分析，直接进入编辑界面
-            frontendLogger.info('[HomeCropComplete]', 'Manual entry mode, skipping AI analysis');
-
-            try {
-                // 压缩图片
-                setAnalysisStep('compressing');
-                const base64Image = await processImageFile(file);
-                setCurrentImage(base64Image);
-
-                // 创建空的ParsedQuestion对象
-                const emptyParsedData: ParsedQuestion = {
-                    questionText: "",
-                    answerText: "",
-                    analysis: "",
-                    knowledgePoints: [],
-                    wrongAnswerText: "",
-                    mistakeAnalysis: "",
-                    mistakeStatus: "unknown",
-                    subject: "其他", // 设置默认科目
-                    requiresImage: true,
-                };
-
-                setAnalysisStep('idle');
-                setParsedData(emptyParsedData);
-                setStep("review");
-
-                frontendLogger.info('[HomeCropComplete]', 'Entered manual edit mode with image');
-            } catch (error) {
-                frontendLogger.error('[HomeCropComplete]', 'Failed to process image for manual entry', {
-                    error: error instanceof Error ? error.message : String(error)
-                });
-                alert(t.common?.messages?.imageProcessFailed || '图片处理失败，请重试');
-                setAnalysisStep('idle');
-            }
-        }
-    };
-
-    const handleAnalyze = async (file: File) => {
-        const startTime = Date.now();
-        frontendLogger.info('[HomeAnalyze]', 'Starting analysis flow', {
-            timeoutSettings: {
-                apiTimeout: aiTimeout,
-                safetyTimeout
-            }
-        });
-
-        try {
-            frontendLogger.info('[HomeAnalyze]', 'Step 1/5: Compressing image');
-            setAnalysisStep('compressing');
-            const base64Image = await processImageFile(file);
-            setCurrentImage(base64Image);
-            frontendLogger.info('[HomeAnalyze]', 'Image compressed successfully', {
-                size: base64Image.length
-            });
-
-            frontendLogger.info('[HomeAnalyze]', 'Step 2/5: Calling API endpoint /api/analyze');
-            setAnalysisStep('analyzing');
-            const apiStartTime = Date.now();
-            const data = await apiClient.post<AnalyzeResponse>("/api/analyze", {
-                imageBase64: base64Image,
-                language: language,
-                subjectId: initialNotebookId || autoSelectedNotebookId || undefined
-            }, { timeout: aiTimeout }); // Use configured timeout
-            const apiDuration = Date.now() - apiStartTime;
-            frontendLogger.info('[HomeAnalyze]', 'API response received, validating data', {
-                apiDuration
-            });
-
-            // Validate response data
-            if (!data || typeof data !== 'object') {
-                frontendLogger.error('[HomeAnalyze]', 'Validation failed - invalid response data', {
-                    data
-                });
-                throw new Error('Invalid API response: data is null or not an object');
-            }
-            frontendLogger.info('[HomeAnalyze]', 'Response data validated successfully');
-
-            frontendLogger.info('[HomeAnalyze]', 'Step 3/5: Setting processing state and progress to 100%');
-            setAnalysisStep('processing');
-            setProgress(100);
-            frontendLogger.info('[HomeAnalyze]', 'Progress updated to 100%');
-
-            frontendLogger.info('[HomeAnalyze]', 'Step 4/5: Setting parsed data and auto-selecting notebook');
-            const dataSize = JSON.stringify(data).length;
-            // Auto-select notebook based on subject
-            if (data.subject) {
-                const matchedNotebook = notebooks.find(n =>
-                    n.name.includes(data.subject!) || data.subject!.includes(n.name)
-                );
-                if (matchedNotebook) {
-                    setAutoSelectedNotebookId(matchedNotebook.id);
-                    frontendLogger.info('[HomeAnalyze]', 'Auto-selected notebook', {
-                        notebook: matchedNotebook.name,
-                        subject: data.subject
-                    });
-                }
-            }
-            const setDataStart = Date.now();
-            setParsedData(data);
-            const setDataDuration = Date.now() - setDataStart;
-            frontendLogger.info('[HomeAnalyze]', 'Parsed data set successfully', {
-                dataSize,
-                setDataDuration
-            });
-
-            frontendLogger.info('[HomeAnalyze]', 'Step 5/5: Switching to review page');
-            const setStepStart = Date.now();
-            setStep("review");
-            const setStepDuration = Date.now() - setStepStart;
-            frontendLogger.info('[HomeAnalyze]', 'Step switched to review', {
-                setStepDuration
-            });
-            const totalDuration = Date.now() - startTime;
-            frontendLogger.info('[HomeAnalyze]', 'Analysis completed successfully', {
-                totalDuration
-            });
-        } catch (error: any) {
-            const errorDuration = Date.now() - startTime;
-            frontendLogger.error('[HomeError]', 'Analysis failed', {
-                errorDuration,
-                error: error.message || String(error)
-            });
-
-            // 安全的错误处理逻辑，防止在报错时二次报错
-            try {
-                let errorMessage = t.common?.messages?.analysisFailed || 'Analysis failed, please try again';
-
-                // ApiError 的结构：error.data.message 包含后端返回的错误类型
-                const backendErrorType = error?.data?.message;
-
-                if (backendErrorType && typeof backendErrorType === 'string') {
-                    // 检查是否是已知的 AI 错误类型
-                    if (t.errors && typeof t.errors === 'object' && backendErrorType in t.errors) {
-                        const mappedError = (t.errors as any)[backendErrorType];
-                        if (typeof mappedError === 'string') {
-                            errorMessage = mappedError;
-                            frontendLogger.info('[HomeError]', `Matched error type: ${backendErrorType}`, {
-                                errorMessage
-                            });
-                        }
-                    } else {
-                        // 使用后端返回的具体错误消息
-                        errorMessage = backendErrorType;
-                        frontendLogger.info('[HomeError]', 'Using backend error message', {
-                            errorMessage
-                        });
-                    }
-                } else if (error?.message) {
-                    // Fallback：检查 error.message（用于非 API 错误）
-                    if (error.message.includes('fetch') || error.message.includes('network')) {
-                        errorMessage = t.errors?.AI_CONNECTION_FAILED || '网络连接失败';
-                    } else if (typeof error.data === 'string') {
-                        frontendLogger.info('[HomeError]', 'Raw error data', {
-                            errorDataPreview: error.data.substring(0, 100)
-                        });
-                        errorMessage += ` (${error.status || 'Error'})`;
-                    }
-                }
-
-                alert(errorMessage);
-            } catch (innerError) {
-                frontendLogger.error('[HomeError]', 'Failed to process error message', {
-                    innerError: String(innerError)
-                });
-                alert('Analysis failed. Please try again.');
-            }
-        } finally {
-            // Always reset analysis state, even if setState throws
-            frontendLogger.info('[HomeAnalyze]', 'Finally: Resetting analysis state to idle');
-            setAnalysisStep('idle');
-            frontendLogger.info('[HomeAnalyze]', 'Analysis state reset complete');
-        }
-    };
-
-    const handleSave = async (finalData: ParsedQuestion & { subjectId?: string; questionNumber?: string }): Promise<void> => {
-        frontendLogger.info('[HomeSave]', 'Starting save process', {
-            hasQuestionText: !!finalData.questionText,
-            hasAnswerText: !!finalData.answerText,
-            subjectId: finalData.subjectId,
-            knowledgePointsCount: finalData.knowledgePoints?.length || 0,
-            hasImage: !!currentImage,
-            imageSize: currentImage?.length || 0,
-        });
-
-        try {
-            const result = await apiClient.post<{ id: string; duplicate?: boolean }>("/api/error-items", {
-                ...finalData,
-                originalImageUrl: currentImage || "",
-            });
-
-            // 检查是否是重复提交（后端去重返回）
-            if (result.duplicate) {
-                frontendLogger.info('[HomeSave]', 'Duplicate submission detected, using existing record');
-            }
-
-            frontendLogger.info('[HomeSave]', 'Save successful');
-            setStep("upload");
-            setParsedData(null);
-            setCurrentImage(null);
-
-            // Redirect to notebook page if subjectId is present
-            if (finalData.subjectId) {
-                router.push(`/notebooks/${finalData.subjectId}`);
-            }
-        } catch (error: any) {
-            frontendLogger.error('[HomeSave]', 'Save failed', {
-                errorStatus: error?.status,
-                errorMessage: error?.data?.message || error?.message || String(error),
-                errorData: error?.data,
-            });
-            alert(t.common?.messages?.saveFailed || 'Failed to save');
-        }
-    };
-
-    const handleTextSubmit = async (questionText: string) => {
-        const startTime = Date.now();
-        frontendLogger.info('[HomeTextSubmit]', 'Starting text-based analysis', { textLength: questionText.length });
-
-        try {
-            setAnalysisStep('analyzing');
-
-            // Infer subject from auto-selected notebook
-            const targetNotebookId = initialNotebookId || autoSelectedNotebookId;
-            const matchedNotebook = targetNotebookId
-                ? notebooks.find(n => n.id === targetNotebookId)
-                : undefined;
-
-            const result = await apiClient.post<{
-                answerText: string;
-                analysis: string;
-                knowledgePoints: string[];
-                wrongAnswerText: string;
-                mistakeAnalysis: string;
-                mistakeStatus: string;
-            }>("/api/reanswer", {
-                questionText,
-                language,
-                subject: matchedNotebook?.name || undefined,
-            }, { timeout: aiTimeout });
-
-            setAnalysisStep('processing');
-            setProgress(100);
-
-            const parsed: ParsedQuestion = {
-                questionText,
-                answerText: result.answerText,
-                analysis: result.analysis,
-                knowledgePoints: result.knowledgePoints || [],
-                wrongAnswerText: result.wrongAnswerText || "",
-                mistakeAnalysis: result.mistakeAnalysis || "",
-                mistakeStatus: (result.mistakeStatus as any) || "unknown",
-                subject: "数学", // Default, will be overridden by notebook selection
-                requiresImage: false,
-            };
-
-            setCurrentImage(null); // No image for text input
-            setParsedData(parsed);
-            setStep("review");
-
-            const totalDuration = Date.now() - startTime;
-            frontendLogger.info('[HomeTextSubmit]', 'Text analysis completed', { totalDuration });
-        } catch (error: any) {
-            const errorDuration = Date.now() - startTime;
-            frontendLogger.error('[HomeTextSubmit]', 'Analysis failed', {
-                errorDuration,
-                error: error.message || String(error)
-            });
-
-            try {
-                let errorMessage = t.common?.messages?.analysisFailed || 'Analysis failed, please try again';
-                const backendErrorType = error?.data?.message;
-                if (backendErrorType && typeof backendErrorType === 'string') {
-                    if (t.errors && typeof t.errors === 'object' && backendErrorType in t.errors) {
-                        const mappedError = (t.errors as any)[backendErrorType];
-                        if (typeof mappedError === 'string') errorMessage = mappedError;
-                    } else {
-                        errorMessage = backendErrorType;
-                    }
-                }
-                alert(errorMessage);
-            } catch {
-                alert('Analysis failed. Please try again.');
-            }
-        } finally {
-            setAnalysisStep('idle');
-        }
-    };
-
-    const handleDirectSave = async (data: {
-        questionText: string;
-        answerText: string;
-        analysis: string;
-        wrongAnswerText: string;
-        mistakeAnalysis: string;
-        mistakeStatus: string;
-        knowledgePoints: string[];
-        subjectId: string;
-        gradeSemester?: string;
-        paperLevel?: string;
-    }): Promise<void> => {
-        frontendLogger.info('[HomeDirectSave]', 'Starting direct save', {
-            hasQuestionText: !!data.questionText,
-            hasAnswerText: !!data.answerText,
-            subjectId: data.subjectId,
-        });
-
-        try {
-            setAnalysisStep('saving');
-            const result = await apiClient.post<{ id: string; duplicate?: boolean }>("/api/error-items", {
-                questionText: data.questionText,
-                answerText: data.answerText,
-                analysis: data.analysis,
-                wrongAnswerText: data.wrongAnswerText || null,
-                mistakeAnalysis: data.mistakeAnalysis || null,
-                mistakeStatus: data.mistakeStatus || "unknown",
-                knowledgePoints: data.knowledgePoints,
-                subjectId: data.subjectId,
-                gradeSemester: data.gradeSemester,
-                paperLevel: data.paperLevel,
-                originalImageUrl: "",
-            });
-
-            if (result.duplicate) {
-                frontendLogger.info('[HomeDirectSave]', 'Duplicate detected');
-            }
-
-            frontendLogger.info('[HomeDirectSave]', 'Save successful');
-            setAnalysisStep('idle');
-
-            if (data.subjectId) {
-                router.push(`/notebooks/${data.subjectId}`);
-            }
-        } catch (error: any) {
-            frontendLogger.error('[HomeDirectSave]', 'Save failed', {
-                errorStatus: error?.status,
-                errorMessage: error?.data?.message || error?.message || String(error),
-            });
-            setAnalysisStep('idle');
-            alert(t.common?.messages?.saveFailed || 'Failed to save');
-        }
-    };
-
-    const getProgressMessage = () => {
-        switch (analysisStep) {
-            case 'compressing': return t.common.progress?.compressing || "Compressing...";
-            case 'uploading': return t.common.progress?.uploading || "Uploading...";
-            case 'analyzing': return t.common.progress?.analyzing || "Analyzing...";
-            case 'processing': return t.common.progress?.processing || "Processing...";
-            case 'saving': return "保存中...";
-            default: return "";
-        }
-    };
-
-    return (
-        <main className="min-h-screen bg-background">
-            <ProgressFeedback
-                status={analysisStep}
-                progress={progress}
-                message={getProgressMessage()}
-            />
-
-            {/* Clipboard Image Confirmation Dialog */}
-            <Dialog open={showClipboardDialog} onOpenChange={setShowClipboardDialog}>
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>检测到剪贴板图片</DialogTitle>
-                        <DialogDescription>
-                            系统检测到您的剪贴板中有一张图片，是否将其作为题目图片使用？
-                        </DialogDescription>
-                    </DialogHeader>
-                    <DialogFooter>
-                        <Button variant="outline" onClick={handleRejectClipboardImage}>
-                            不使用
-                        </Button>
-                        <Button onClick={handleUseClipboardImage}>
-                            使用图片
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
-
-            {/* QR Code Scanner */}
-            {showQRScanner && (
-                <QRCodeScanner
-                    onScanSuccess={handleQRScanSuccess}
-                    onClose={() => setShowQRScanner(false)}
-                />
-            )}
-
-            {/* 打印次数确认框：扫码的题目已有打印记录时询问是否 +1 */}
-            <Dialog open={!!pendingPrintScan} onOpenChange={(open) => { if (!open) handleCancelPrintIncrement(); }}>
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>记录已打印</DialogTitle>
-                        <DialogDescription>
-                            该题目已打印 {pendingPrintScan?.currentCount} 次，是否将打印次数加一？
-                        </DialogDescription>
-                    </DialogHeader>
-                    <DialogFooter>
-                        <Button variant="outline" onClick={handleCancelPrintIncrement}>
-                            取消
-                        </Button>
-                        <Button onClick={handleConfirmPrintIncrement}>
-                            加一
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
-
-            <div className="container mx-auto p-4 space-y-8 pb-20">
-                {/* Header Section */}
-                <div className="flex justify-between items-start gap-4">
-                    <UserWelcome />
-
-                    <div className="flex items-center gap-2 bg-card p-2 rounded-lg border shadow-sm shrink-0">
-                        <BroadcastNotification />
-                        <SettingsDialog />
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            className="rounded-full text-muted-foreground hover:text-destructive"
-                            onClick={() => signOut({ callbackUrl: '/login' })}
-                            title={t.app?.logout || 'Logout'}
-                        >
-                            <LogOut className="h-5 w-5" />
-                        </Button>
-                    </div>
-                </div>
-
-                {/* Action Center */}
-                <div className={initialNotebookId ? "flex justify-center mb-6" : "grid grid-cols-2 md:grid-cols-4 gap-4"}>
-                    <Button
-                        size="lg"
-                        className={`h-auto py-4 text-base shadow-sm hover:shadow-md transition-all ${initialNotebookId ? "w-full max-w-md" : ""}`}
-                        variant={step === "upload" ? "default" : "secondary"}
-                        onClick={() => { setStep("upload"); setInputMode("image"); }}
-                    >
-                        <div className="flex items-center gap-2">
-                            <Upload className="h-5 w-5" />
-                            <span>{t.app.uploadNew}</span>
-                        </div>
-                    </Button>
-
-                    {!initialNotebookId && (
-                        <>
-                            <Link href="/notebooks" className="w-full">
-                                <Button
-                                    variant="outline"
-                                    size="lg"
-                                    className="w-full h-auto py-4 text-base shadow-sm hover:shadow-md transition-all border hover:border-primary/50 hover:bg-accent/50"
-                                >
-                                    <div className="flex items-center gap-2">
-                                        <BookOpen className="h-5 w-5" />
-                                        <span>{t.app.viewNotebook}</span>
-                                    </div>
-                                </Button>
-                            </Link>
-
-                            <Link href="/tags" className="w-full">
-                                <Button
-                                    variant="outline"
-                                    size="lg"
-                                    className="w-full h-auto py-4 text-base shadow-sm hover:shadow-md transition-all border hover:border-primary/50 hover:bg-accent/50"
-                                >
-                                    <div className="flex items-center gap-2">
-                                        <Tags className="h-5 w-5" />
-                                        <span>{t.app?.tags || 'Tags'}</span>
-                                    </div>
-                                </Button>
-                            </Link>
-
-                            <Link href="/stats" className="w-full">
-                                <Button
-                                    variant="outline"
-                                    size="lg"
-                                    className="w-full h-auto py-4 text-base shadow-sm hover:shadow-md transition-all border hover:border-primary/50 hover:bg-accent/50"
-                                >
-                                    <div className="flex items-center gap-2">
-                                        <BarChart3 className="h-5 w-5" />
-                                        <span>{t.app?.stats || 'Stats'}</span>
-                                    </div>
-                                </Button>
-                            </Link>
-
-                            <Button
-                                variant="outline"
-                                size="lg"
-                                className="w-full h-auto py-4 text-base shadow-sm hover:shadow-md transition-all border hover:border-primary/50 hover:bg-accent/50"
-                                onClick={() => { scanModeRef.current = "find"; setShowQRScanner(true); }}
-                            >
-                                <div className="flex items-center gap-2">
-                                    <QrCode className="h-5 w-5" />
-                                    <span>扫描二维码找题</span>
-                                </div>
-                            </Button>
-
-                            <Button
-                                variant="outline"
-                                size="lg"
-                                className="w-full h-auto py-4 text-base shadow-sm hover:shadow-md transition-all border hover:border-primary/50 hover:bg-accent/50"
-                                onClick={() => { scanModeRef.current = "print"; setShowQRScanner(true); }}
-                            >
-                                <div className="flex items-center gap-2">
-                                    <QrCode className="h-5 w-5" />
-                                    <span>记录已打印</span>
-                                </div>
-                            </Button>
-                        </>
-                    )}
-                </div>
-
-                {step === "upload" && (
-                    <div className="space-y-4">
-                        {/* Input mode tabs */}
-                        <div className="flex gap-2 border-b">
-                            <button
-                                className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-                                    inputMode === "image"
-                                        ? "border-primary text-primary"
-                                        : "border-transparent text-muted-foreground hover:text-foreground"
-                                }`}
-                                onClick={() => setInputMode("image")}
-                            >
-                                <Upload className="h-4 w-4" />
-                                {t.app?.uploadImage || "拍照上传"}
-                            </button>
-                            <button
-                                className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-                                    inputMode === "text"
-                                        ? "border-primary text-primary"
-                                        : "border-transparent text-muted-foreground hover:text-foreground"
-                                }`}
-                                onClick={() => setInputMode("text")}
-                            >
-                                <PenLine className="h-4 w-4" />
-                                {t.app?.manualInput || "AI解题"}
-                            </button>
-                            <button
-                                className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-                                    inputMode === "direct"
-                                        ? "border-primary text-primary"
-                                        : "border-transparent text-muted-foreground hover:text-foreground"
-                                }`}
-                                onClick={() => setInputMode("direct")}
-                            >
-                                <PenLine className="h-4 w-4" />
-                                直接录入
-                            </button>
-                        </div>
-
-                        {inputMode === "image" ? (
-                            <UploadZone onImageSelect={onImageSelect} isAnalyzing={analysisStep !== 'idle'} showClipboardHint={true} />
-                        ) : inputMode === "text" ? (
-                            <TextInputZone
-                                onSubmit={handleTextSubmit}
-                                isAnalyzing={analysisStep !== 'idle'}
-                                defaultNotebookName={
-                                    (initialNotebookId || autoSelectedNotebookId)
-                                        ? notebooks.find(n => n.id === (initialNotebookId || autoSelectedNotebookId))?.name
-                                        : undefined
-                                }
-                            />
-                        ) : (
-                            <DirectTextEditor
-                                onSubmit={handleDirectSave}
-                                defaultNotebookId={initialNotebookId || autoSelectedNotebookId || undefined}
-                                defaultNotebookName={
-                                    (initialNotebookId || autoSelectedNotebookId)
-                                        ? notebooks.find(n => n.id === (initialNotebookId || autoSelectedNotebookId))?.name
-                                        : undefined
-                                }
-                                isSaving={analysisStep === 'saving'}
-                            />
-                        )}
-                    </div>
-                )}
-
-                {croppingImage && (
-                    <ImageCropper
-                        imageSrc={croppingImage}
-                        open={isCropperOpen}
-                        onClose={() => setIsCropperOpen(false)}
-                        onCropComplete={handleCropComplete}
-                    />
-                )}
-
-                {step === "review" && parsedData && (
-                    <CorrectionEditor
-                        initialData={parsedData}
-                        onSave={handleSave}
-                        onCancel={() => setStep("upload")}
-                        imagePreview={currentImage}
-                        initialSubjectId={initialNotebookId || autoSelectedNotebookId || undefined}
-                        initialPaperLevel={initialPaperLevel}
-                        aiTimeout={aiTimeout}
-                    />
-                )}
-
-            </div>
-
-            {/* 备案信息 */}
-            <div className="text-center text-xs text-gray-500 py-4">
-                <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" className="hover:text-gray-700">
-                    京ICP备2026004308号
-                </a>
-                {" | "}
-                <a href="http://www.beian.gov.cn/portal/index.do" target="_blank" rel="noopener noreferrer" className="hover:text-gray-700">
-                    京公网安备11010502059294号
-                </a>
-            </div>
-        </main>
-    );
+import { MarkdownRenderer } from "@/components/markdown-renderer";
+import { apiClient, ApiError } from "@/lib/api-client";
+import { Bot, Eraser, PenLine, SendHorizontal, Sparkles } from "lucide-react";
+
+interface ChatMessage {
+    role: "user" | "assistant";
+    content: string;
 }
 
-export default function Home() {
+const STORAGE_KEY = "chat-messages";
+
+const SUGGESTIONS = [
+    "我要看物理错题",
+    "打开数学错题本",
+    "看看学习统计",
+    "怎么打印错题？",
+];
+
+// [[JUMP:url]] 动作令牌：助手回复中建议跳转的站内地址，前端渲染为“立即前往”按钮
+const JUMP_REGEX = /\[\[JUMP:([^\]]+)\]\]/g;
+
+const splitJumpAction = (text: string): { display: string; jumpUrl: string | null } => {
+    let jumpUrl: string | null = null;
+    const display = text
+        .replace(JUMP_REGEX, (_, url: string) => {
+            if (!jumpUrl && url.startsWith("/")) jumpUrl = url;
+            return "";
+        })
+        // 流式输出中可能存在未闭合的半截令牌，渲染时一并隐藏
+        .replace(/\[\[JUMP:[^\]]*$/, "");
+    return { display, jumpUrl };
+};
+
+export default function ChatHomePage() {
+    const router = useRouter();
+    const [messages, setMessages] = useState<ChatMessage[]>([]);
+    const [input, setInput] = useState("");
+    const [sending, setSending] = useState(false);
+    const [streamText, setStreamText] = useState("");
+    const [error, setError] = useState<string | null>(null);
+    const scrollRef = useRef<HTMLDivElement>(null);
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+    // 会话历史本地持久化，刷新后仍在
+    useEffect(() => {
+        try {
+            const saved = localStorage.getItem(STORAGE_KEY);
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                if (Array.isArray(parsed)) setMessages(parsed.filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string"));
+            }
+        } catch {
+            // 忽略损坏的本地数据
+        }
+    }, []);
+
+    useEffect(() => {
+        try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(messages.slice(-50)));
+        } catch {
+            // 存储不可用时忽略
+        }
+    }, [messages]);
+
+    // 新内容到达时滚动到底部
+    useEffect(() => {
+        const el = scrollRef.current;
+        if (el) el.scrollTop = el.scrollHeight;
+    }, [messages, streamText]);
+
+    const sendMessage = async (text: string) => {
+        const trimmed = text.trim();
+        if (!trimmed || sending) return;
+
+        setError(null);
+        setInput("");
+        setStreamText("");
+        const history = [...messages, { role: "user" as const, content: trimmed }];
+        setMessages(history);
+        setSending(true);
+
+        try {
+            const res = await fetch("/api/chat", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    messages: history.slice(-16).map((m) => ({ role: m.role, content: m.content })),
+                }),
+            });
+
+            if (!res.ok) {
+                let message = `请求失败（${res.status}）`;
+                try {
+                    const data = await res.json();
+                    if (data?.error) message = data.error;
+                } catch {
+                    // 非 JSON 错误响应
+                }
+                throw new Error(message);
+            }
+
+            const reader = res.body?.getReader();
+            if (!reader) throw new Error("浏览器不支持流式响应");
+
+            const decoder = new TextDecoder();
+            let buffer = "";
+            let assistant = "";
+            for (;;) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+                let newlineIndex: number;
+                while ((newlineIndex = buffer.indexOf("\n")) >= 0) {
+                    const line = buffer.slice(0, newlineIndex).trim();
+                    buffer = buffer.slice(newlineIndex + 1);
+                    if (!line.startsWith("data:")) continue;
+                    const payload = line.slice(5).trim();
+                    if (payload === "[DONE]") continue;
+                    try {
+                        const evt = JSON.parse(payload);
+                        if (typeof evt.text === "string") {
+                            assistant += evt.text;
+                            setStreamText(assistant);
+                        }
+                        if (evt.error) throw new Error(evt.error);
+                    } catch (parseError) {
+                        // 仅忽略 JSON 语法错误（非 JSON 的 SSE 行），业务错误继续抛出
+                        if (!(parseError instanceof SyntaxError)) throw parseError;
+                    }
+                }
+            }
+
+            if (assistant.trim()) {
+                setMessages((prev) => [...prev, { role: "assistant", content: assistant }]);
+            } else {
+                throw new Error("AI 没有返回内容，请重试");
+            }
+        } catch (err) {
+            const message = err instanceof ApiError
+                ? (err.data as { message?: string } | null)?.message || err.message
+                : err instanceof Error ? err.message : "发送失败，请重试";
+            setError(message);
+        } finally {
+            setStreamText("");
+            setSending(false);
+            textareaRef.current?.focus();
+        }
+    };
+
+    const clearConversation = () => {
+        if (sending) return;
+        setMessages([]);
+        setError(null);
+    };
+
+    const renderAssistant = (content: string, key: string) => {
+        const { display, jumpUrl } = splitJumpAction(content);
+        return (
+            <div key={key} className="flex items-start gap-2">
+                <div className="shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center mt-1">
+                    <Bot className="w-5 h-5 text-primary" />
+                </div>
+                <div className="max-w-[85%] rounded-2xl bg-muted px-4 py-3 space-y-2">
+                    <MarkdownRenderer content={display} className="text-sm leading-6" />
+                    {jumpUrl && (
+                        <Button size="sm" className="h-8" onClick={() => router.push(jumpUrl)}>
+                            <Sparkles className="w-3.5 h-3.5 mr-1" />
+                            立即前往
+                        </Button>
+                    )}
+                </div>
+            </div>
+        );
+    };
+
     return (
-        <Suspense fallback={<div>Loading...</div>}>
-            <HomeContent />
-        </Suspense>
+        <div className="flex flex-col h-screen bg-background">
+            {/* 顶栏 */}
+            <header className="shrink-0 border-b px-3 sm:px-4 py-2.5 flex items-center gap-2">
+                <h1 className="text-base sm:text-lg font-bold flex-1">AI 助手</h1>
+                <Link href="/upload">
+                    <Button variant="ghost" size="sm" title="录入错题">
+                        <PenLine className="w-4 h-4 mr-1" />
+                        录入
+                    </Button>
+                </Link>
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={clearConversation}
+                    disabled={sending || messages.length === 0}
+                    title="清空会话"
+                >
+                    <Eraser className="w-4 h-4 mr-1" />
+                    清空
+                </Button>
+            </header>
+
+            {/* 消息区 */}
+            <div ref={scrollRef} className="flex-1 overflow-y-auto">
+                <div className="max-w-3xl mx-auto px-3 sm:px-4 py-4 space-y-4">
+                    {messages.length === 0 && !streamText && (
+                        <div className="text-center py-10 space-y-4">
+                            <div className="w-14 h-14 rounded-2xl bg-primary/10 mx-auto flex items-center justify-center">
+                                <Bot className="w-8 h-8 text-primary" />
+                            </div>
+                            <div>
+                                <h2 className="text-lg font-bold">你好，我是智能错题本助手</h2>
+                                <p className="text-sm text-muted-foreground mt-1">可以让我帮你查看错题、打开错题本、解答疑问</p>
+                            </div>
+                            <div className="flex flex-wrap justify-center gap-2">
+                                {SUGGESTIONS.map((s) => (
+                                    <button
+                                        key={s}
+                                        className="px-3 py-1.5 rounded-full border bg-muted/40 text-sm hover:bg-muted hover:border-primary/40 transition-colors"
+                                        onClick={() => sendMessage(s)}
+                                    >
+                                        {s}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {messages.map((m, i) =>
+                        m.role === "user" ? (
+                            <div key={i} className="flex justify-end">
+                                <div className="max-w-[85%] rounded-2xl bg-primary text-primary-foreground px-4 py-2.5 text-sm whitespace-pre-wrap break-words">
+                                    {m.content}
+                                </div>
+                            </div>
+                        ) : (
+                            renderAssistant(m.content, `m-${i}`)
+                        )
+                    )}
+
+                    {streamText && renderAssistant(streamText, "stream")}
+
+                    {sending && !streamText && (
+                        <div className="flex items-start gap-2">
+                            <div className="shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center mt-1">
+                                <Bot className="w-5 h-5 text-primary" />
+                            </div>
+                            <div className="rounded-2xl bg-muted px-4 py-3">
+                                <span className="inline-flex gap-1">
+                                    <span className="w-2 h-2 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:0ms]" />
+                                    <span className="w-2 h-2 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:150ms]" />
+                                    <span className="w-2 h-2 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:300ms]" />
+                                </span>
+                            </div>
+                        </div>
+                    )}
+
+                    {error && (
+                        <div className="text-center">
+                            <span className="text-sm text-red-500">{error}</span>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* 输入区 */}
+            <footer className="shrink-0 border-t p-3 sm:p-4">
+                <div className="max-w-3xl mx-auto flex items-end gap-2">
+                    <textarea
+                        ref={textareaRef}
+                        value={input}
+                        onChange={(e) => setInput(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                                e.preventDefault();
+                                sendMessage(input);
+                            }
+                        }}
+                        placeholder="输入消息，Enter 发送，Shift+Enter 换行"
+                        rows={1}
+                        disabled={sending}
+                        className="flex-1 resize-none rounded-xl border bg-muted/30 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 max-h-32 disabled:opacity-60"
+                    />
+                    <Button
+                        size="icon"
+                        className="rounded-xl w-10 h-10 shrink-0"
+                        onClick={() => sendMessage(input)}
+                        disabled={sending || !input.trim()}
+                        title="发送"
+                    >
+                        <SendHorizontal className="w-4 h-4" />
+                    </Button>
+                </div>
+            </footer>
+        </div>
     );
 }

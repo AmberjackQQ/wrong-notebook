@@ -8,12 +8,20 @@ interface MarkdownRendererProps {
     className?: string;
 }
 
+// 链接 href 白名单校验：仅允许站内相对路径与 http(s)，防 javascript: 等注入
+const isSafeHref = (href: string): boolean =>
+    href.startsWith('/') || href.startsWith('#') || /^https?:\/\//i.test(href);
+
 // Simple inline markdown processor
 const processInlineMarkdown = (text: string): string => {
     return text
         // Markdown 图片 ![alt](src) → <img>（PaddleOCR 结果中内联的 data URL 图片）；
         // 必须在换行替换前处理（src 中虽无换行，但保持替换顺序清晰）
         .replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, '<img src="$2" alt="$1" style="max-width: 100%; height: auto;" />')
+        // Markdown 链接 [text](href) → <a>（图片规则之后处理，剩余的 [..](..) 即链接）；
+        // href 不合法时保留原文本
+        .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (match, linkText: string, href: string) =>
+            isSafeHref(href) ? `<a href="${href}" style="color: #2563eb; text-decoration: underline;">${linkText}</a>` : match)
         // Bold **text**
         .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
         // Italic *text*

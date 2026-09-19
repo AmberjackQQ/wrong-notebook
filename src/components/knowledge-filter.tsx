@@ -34,7 +34,6 @@ interface KnowledgeFilterProps {
     availableTags?: string[];
     onFilterChange: (filters: {
         gradeSemester?: string;
-        chapter?: string;
         tags?: string[];
     }) => void;
     className?: string;
@@ -73,7 +72,6 @@ export function KnowledgeFilter({
     className
 }: KnowledgeFilterProps) {
     const [gradeSemester, setGradeSemester] = useState<string>(initialGrade || "");
-    const [chapter, setChapter] = useState<string>("");
     const [selectedTags, setSelectedTags] = useState<string[]>(initialTags || []);
     const [isTagDropdownOpen, setIsTagDropdownOpen] = useState(false);
 
@@ -199,21 +197,9 @@ export function KnowledgeFilter({
 
     const handleGradeChange = (val: string) => {
         setGradeSemester(val);
-        setChapter("");
         setSelectedTags([]);
         onFilterChange({
             gradeSemester: val === "all" ? undefined : val,
-            chapter: undefined,
-            tags: []
-        });
-    };
-
-    const handleChapterChange = (val: string) => {
-        setChapter(val);
-        setSelectedTags([]);
-        onFilterChange({
-            gradeSemester: gradeSemester === "all" ? undefined : gradeSemester,
-            chapter: val === "all" ? undefined : val,
             tags: []
         });
     };
@@ -225,7 +211,6 @@ export function KnowledgeFilter({
         setSelectedTags(newTags);
         onFilterChange({
             gradeSemester: gradeSemester === "all" ? undefined : gradeSemester,
-            chapter: chapter === "all" ? undefined : chapter,
             tags: newTags
         });
     };
@@ -236,7 +221,6 @@ export function KnowledgeFilter({
         setSelectedTags(newTags);
         onFilterChange({
             gradeSemester: gradeSemester === "all" ? undefined : gradeSemester,
-            chapter: chapter === "all" ? undefined : chapter,
             tags: newTags
         });
     };
@@ -245,32 +229,12 @@ export function KnowledgeFilter({
         setSelectedTags([]);
         onFilterChange({
             gradeSemester: gradeSemester === "all" ? undefined : gradeSemester,
-            chapter: chapter === "all" ? undefined : chapter,
             tags: []
         });
     };
 
-    // 从标签树中找到当前年级节点
-    const currentGradeNode = tagTree.find(node => node.name === gradeSemester);
-    const chapters = currentGradeNode?.children || [];
-
-    // 从标签树中找到当前章节节点
-    const currentChapterNode = chapters.find(node => node.name === chapter);
-
-    // 递归获取所有叶子标签
-    const getLeafTags = (node: TagTreeNode): string[] => {
-        if (node.children.length === 0) return [node.name];
-        return node.children.flatMap(child => getLeafTags(child));
-    };
-
-    // 获取可用标签：优先使用页面中所有题目的标签，否则使用章节树中的标签
-    const treeTags = currentChapterNode
-        ? [...new Set(getLeafTags(currentChapterNode))]
-        : [];
-
-    const displayTags = availableTags && availableTags.length > 0
-        ? availableTags
-        : treeTags;
+    // 可用标签：优先使用页面中所有题目的标签
+    const displayTags = availableTags ?? [];
 
     // 过滤可用年级 (只显示数据库中存在的)
     // 对于非数学科目，如果不按照年级结构存储，这里可能会被清空
@@ -293,20 +257,6 @@ export function KnowledgeFilter({
                     <SelectItem value="all">全部年级</SelectItem>
                     {filteredGrades.map(gs => (
                         <SelectItem key={gs} value={gs}>{gs}</SelectItem>
-                    ))}
-                </SelectContent>
-            </Select>
-
-            <Select value={chapter} onValueChange={handleChapterChange} disabled={!gradeSemester || gradeSemester === "all"}>
-                <SelectTrigger className="w-[180px]">
-                    <SelectValue placeholder="章节" />
-                </SelectTrigger>
-                <SelectContent>
-                    <SelectItem value="all">全部章节</SelectItem>
-                    {chapters.map(c => (
-                        <SelectItem key={c.id} value={c.name}>
-                            {c.name.replace(/^第\d+章\s*/, '')}
-                        </SelectItem>
                     ))}
                 </SelectContent>
             </Select>

@@ -789,7 +789,7 @@ function PrintPreviewContent() {
                             {renderFooters(`${item.id}:stem`, 1, totalPages)}
                         </div>
 
-                        {/* 题目栏 + 答案 + 解析：打印时另起一页，题目栏（题号/来源/知识点等）随答案、解析显示在第2页 */}
+                        {/* 题目栏 + 解析 + 答案：打印时另起一页，题目栏（题号/来源/知识点等）随解析、答案显示在第2页 */}
                         {(showQuestionHeader || showAnswers || showAnalysis) && (
                         <div
                             data-print-chunk={`${item.id}:answer`}
@@ -836,64 +836,6 @@ function PrintPreviewContent() {
                                     )}
                                 </div>
                             )}
-                            {/* Answer */}
-                            {showAnswers && (() => {
-                                const hasAnswerText = (item.answerText?.trim() || '').length > 0;
-                                let hasAnswerImages = false;
-                                if (item.answerImages) {
-                                    try {
-                                        const images = JSON.parse(item.answerImages);
-                                        hasAnswerImages = Array.isArray(images) && images.length > 0;
-                                    } catch (e) {
-                                        hasAnswerImages = false;
-                                    }
-                                }
-                                return hasAnswerText || hasAnswerImages;
-                            })() && (
-                                <div className="mb-4">
-                                    <h3 data-frag="answer-heading" className="font-semibold mb-2">
-                                        {t.printPreview?.referenceAnswer || '答题一'}:
-                                        {showAnswerTime && item.answerTime && (
-                                            <span className="font-normal text-xs text-muted-foreground ml-2">
-                                                {new Date(item.answerTime).toLocaleString('zh-CN', {
-                                                    year: 'numeric',
-                                                    month: '2-digit',
-                                                    day: '2-digit',
-                                                    hour: '2-digit',
-                                                    minute: '2-digit'
-                                                })}
-                                            </span>
-                                        )}
-                                    </h3>
-                                    {item.answerText && <MarkdownRenderer content={item.answerText} />}
-                                    {/* Answer Images */}
-                                    {item.answerImages && (() => {
-                                        try {
-                                            const images = JSON.parse(item.answerImages);
-                                            if (Array.isArray(images) && images.length > 0) {
-                                                return (
-                                                    <div className={`mt-4 grid ${fitImagesToPage ? "grid-cols-1" : "grid-cols-2"} gap-3`}>
-                                                        {images.map((img: any, idx: number) => (
-                                                            <div key={idx} data-frag="answer-image" className="break-inside-avoid" style={{ width: '100%' }}>
-                                                                <img
-                                                                    src={img.dataUrl}
-                                                                    alt={img.name || `答案图片 ${idx + 1}`}
-                                                                    className="h-auto rounded border"
-                                                                    style={getEnhancedStyle(answerImageScale, enhanceAnswerImages)}
-                                                                />
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                );
-                                            }
-                                        } catch (e) {
-                                            console.error("Failed to parse answer images:", e);
-                                        }
-                                        return null;
-                                    })()}
-                                </div>
-                            )}
-
                             {/* Analysis */}
                             {showAnalysis && (() => {
                                 const hasAnalysisText = (item.analysis?.trim() || '').length > 0;
@@ -948,6 +890,64 @@ function PrintPreviewContent() {
                                             }
                                         } catch (e) {
                                             console.error("Failed to parse analysis images:", e);
+                                        }
+                                        return null;
+                                    })()}
+                                </div>
+                            )}
+
+                            {/* Answer */}
+                            {showAnswers && (() => {
+                                const hasAnswerText = (item.answerText?.trim() || '').length > 0;
+                                let hasAnswerImages = false;
+                                if (item.answerImages) {
+                                    try {
+                                        const images = JSON.parse(item.answerImages);
+                                        hasAnswerImages = Array.isArray(images) && images.length > 0;
+                                    } catch (e) {
+                                        hasAnswerImages = false;
+                                    }
+                                }
+                                return hasAnswerText || hasAnswerImages;
+                            })() && (
+                                <div className="mb-4">
+                                    <h3 data-frag="answer-heading" className="font-semibold mb-2">
+                                        {t.printPreview?.referenceAnswer || '答题一'}:
+                                        {showAnswerTime && item.answerTime && (
+                                            <span className="font-normal text-xs text-muted-foreground ml-2">
+                                                {new Date(item.answerTime).toLocaleString('zh-CN', {
+                                                    year: 'numeric',
+                                                    month: '2-digit',
+                                                    day: '2-digit',
+                                                    hour: '2-digit',
+                                                    minute: '2-digit'
+                                                })}
+                                            </span>
+                                        )}
+                                    </h3>
+                                    {item.answerText && <MarkdownRenderer content={item.answerText} />}
+                                    {/* Answer Images */}
+                                    {item.answerImages && (() => {
+                                        try {
+                                            const images = JSON.parse(item.answerImages);
+                                            if (Array.isArray(images) && images.length > 0) {
+                                                return (
+                                                    <div className={`mt-4 grid ${fitImagesToPage ? "grid-cols-1" : "grid-cols-2"} gap-3`}>
+                                                        {images.map((img: any, idx: number) => (
+                                                            <div key={idx} data-frag="answer-image" className="break-inside-avoid" style={{ width: '100%' }}>
+                                                                <img
+                                                                    src={img.dataUrl}
+                                                                    alt={img.name || `答案图片 ${idx + 1}`}
+                                                                    className="h-auto rounded border"
+                                                                    style={getEnhancedStyle(answerImageScale, enhanceAnswerImages)}
+                                                                />
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                );
+                                            }
+                                        } catch (e) {
+                                            console.error("Failed to parse answer images:", e);
                                         }
                                         return null;
                                     })()}

@@ -90,7 +90,7 @@ export default function NotebookDetailPage() {
                                 <Plus className="h-4 w-4" />
                             </Button>
                         </Link>
-                        <Link href="/">
+                        <Link href="/upload">
                             <Button variant="ghost" size="icon">
                                 <House className="h-5 w-5" />
                             </Button>

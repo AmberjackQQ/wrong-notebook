@@ -455,7 +455,7 @@ export default function TagsPage() {
     return (
         <div className="container mx-auto px-4 py-8 max-w-6xl">
             <div className="flex items-center gap-4 mb-6">
-                <BackButton fallbackUrl="/" />
+                <BackButton fallbackUrl="/upload" />
                 <div>
                     <h1 className="text-3xl font-bold">{t.tags?.title || "Tag Management"}</h1>
                     <p className="text-muted-foreground mt-1">
@@ -463,7 +463,7 @@ export default function TagsPage() {
                     </p>
                 </div>
                 <div className="ml-auto flex items-center">
-                    <Link href="/">
+                    <Link href="/upload">
                         <Button variant="ghost" size="icon">
                             <House className="h-5 w-5" />
                         </Button>

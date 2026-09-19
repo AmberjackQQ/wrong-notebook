@@ -37,6 +37,7 @@ export interface AppConfig {
     prompts?: {
         analyze?: string;
         similar?: string;
+        knowledgeTags?: string;
     };
     timeouts?: {
         analyze?: number; // 毫秒
@@ -119,6 +120,7 @@ const DEFAULT_CONFIG: AppConfig = {
     prompts: {
         analyze: '',
         similar: '',
+        knowledgeTags: '',
     },
     timeouts: {
         analyze: 180000,

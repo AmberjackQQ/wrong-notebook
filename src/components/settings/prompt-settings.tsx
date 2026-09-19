@@ -6,13 +6,21 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AppConfig } from "@/types/api";
-import { DEFAULT_ANALYZE_TEMPLATE, DEFAULT_SIMILAR_TEMPLATE } from "@/lib/ai/prompts";
+import { DEFAULT_ANALYZE_TEMPLATE, DEFAULT_SIMILAR_TEMPLATE, DEFAULT_KNOWLEDGE_TAGS_TEMPLATE } from "@/lib/ai/prompts";
 import { RotateCcw, AlertTriangle, Info } from "lucide-react";
 import { useLanguage } from "@/contexts/LanguageContext";
 
+type PromptType = 'analyze' | 'similar' | 'knowledgeTags';
+
+const PROMPT_DEFAULTS: Record<PromptType, string> = {
+    analyze: DEFAULT_ANALYZE_TEMPLATE,
+    similar: DEFAULT_SIMILAR_TEMPLATE,
+    knowledgeTags: DEFAULT_KNOWLEDGE_TAGS_TEMPLATE,
+};
+
 interface PromptSettingsProps {
     config: AppConfig;
-    onUpdate: (type: 'analyze' | 'similar', value: string) => void;
+    onUpdate: (type: PromptType, value: string) => void;
 }
 
 interface VariableInfoProps {
@@ -33,33 +41,35 @@ export function PromptSettings({ config, onUpdate }: PromptSettingsProps) {
     const { language, t } = useLanguage();
     const [analyzeTemplate, setAnalyzeTemplate] = useState("");
     const [similarTemplate, setSimilarTemplate] = useState("");
+    const [knowledgeTagsTemplate, setKnowledgeTagsTemplate] = useState("");
+
+    const templateState: Record<PromptType, string> = {
+        analyze: analyzeTemplate,
+        similar: similarTemplate,
+        knowledgeTags: knowledgeTagsTemplate,
+    };
+    const templateSetters: Record<PromptType, (value: string) => void> = {
+        analyze: setAnalyzeTemplate,
+        similar: setSimilarTemplate,
+        knowledgeTags: setKnowledgeTagsTemplate,
+    };
 
     useEffect(() => {
         setAnalyzeTemplate(config.prompts?.analyze || DEFAULT_ANALYZE_TEMPLATE);
         setSimilarTemplate(config.prompts?.similar || DEFAULT_SIMILAR_TEMPLATE);
+        setKnowledgeTagsTemplate(config.prompts?.knowledgeTags || DEFAULT_KNOWLEDGE_TAGS_TEMPLATE);
     }, [config.prompts]);
 
-    const handleReset = (type: 'analyze' | 'similar') => {
+    const handleReset = (type: PromptType) => {
         if (!confirm(t.settings?.prompts?.resetConfirm || "Are you sure you want to reset to default?")) return;
 
-        const defaultValue = type === 'analyze' ? DEFAULT_ANALYZE_TEMPLATE : DEFAULT_SIMILAR_TEMPLATE;
-        if (type === 'analyze') {
-            setAnalyzeTemplate(defaultValue);
-            onUpdate('analyze', defaultValue);
-        } else {
-            setSimilarTemplate(defaultValue);
-            onUpdate('similar', defaultValue);
-        }
+        templateSetters[type](PROMPT_DEFAULTS[type]);
+        onUpdate(type, PROMPT_DEFAULTS[type]);
     };
 
-    const handleChange = (type: 'analyze' | 'similar', value: string) => {
-        if (type === 'analyze') {
-            setAnalyzeTemplate(value);
-            onUpdate('analyze', value);
-        } else {
-            setSimilarTemplate(value);
-            onUpdate('similar', value);
-        }
+    const handleChange = (type: PromptType, value: string) => {
+        templateSetters[type](value);
+        onUpdate(type, value);
     };
 
     const WarningBox = () => (
@@ -76,112 +86,96 @@ export function PromptSettings({ config, onUpdate }: PromptSettingsProps) {
         </div>
     );
 
+    const renderTemplateTab = (type: PromptType) => {
+        const varsByType: Record<PromptType, { name: string; description: string }[]> = {
+            analyze: [
+                { name: "language_instruction", description: t.settings?.prompts?.vars?.languageInstruction || "Injects instructions based on target language (e.g., keep English questions in English but analysis in Chinese)." },
+                { name: "knowledge_points_list", description: t.settings?.prompts?.vars?.knowledgePointsList || "Injects the standard list of knowledge point tags for the specific subject." },
+                { name: "provider_hints", description: t.settings?.prompts?.vars?.providerHints || "System-injected hints (e.g., enforcing JSON format)." },
+            ],
+            similar: [
+                { name: "difficulty_level", description: t.settings?.prompts?.vars?.difficultyLevel || "Target difficulty level." },
+                { name: "difficulty_instruction", description: t.settings?.prompts?.vars?.difficultyInstruction || "Specific writing instructions for the target difficulty." },
+                { name: "original_question", description: t.settings?.prompts?.vars?.originalQuestion || "The full text of the original question." },
+                { name: "knowledge_points", description: t.settings?.prompts?.vars?.knowledgePoints || "List of knowledge points to test." },
+                { name: "language_instruction", description: t.settings?.prompts?.vars?.languageInstructionShort || "Language formatting instructions." },
+            ],
+            knowledgeTags: [
+                { name: "subject", description: t.settings?.prompts?.vars?.subject || "Subject of the question (e.g. 数学/物理)." },
+                { name: "grade_semester", description: t.settings?.prompts?.vars?.gradeSemester || "Grade and semester of the student (e.g. 八年级下)." },
+                { name: "knowledge_points_list", description: t.settings?.prompts?.vars?.knowledgePointsList || "Injects the standard list of knowledge point tags for the specific subject." },
+                { name: "question_text", description: t.settings?.prompts?.vars?.questionText || "The question content." },
+                { name: "answer_text", description: t.settings?.prompts?.vars?.answerText || "The answer content (may be empty)." },
+                { name: "analysis", description: t.settings?.prompts?.vars?.analysis || "The analysis/explanation content (may be empty)." },
+            ],
+        };
+        const labelByType: Record<PromptType, string> = {
+            analyze: t.settings?.prompts?.customAnalysis || "Custom Analysis Template",
+            similar: t.settings?.prompts?.customSimilar || "Custom Similar Question Template",
+            knowledgeTags: t.settings?.prompts?.customKnowledgeTags || "Custom Knowledge Tags Template",
+        };
+
+        return (
+            <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                    <Label className="text-base font-semibold">
+                        {labelByType[type]}
+                    </Label>
+                    <Button variant="outline" size="sm" onClick={() => handleReset(type)}>
+                        <RotateCcw className="w-4 h-4 mr-2" />
+                        {t.settings?.prompts?.reset || "Reset Default"}
+                    </Button>
+                </div>
+
+                <WarningBox />
+
+                <div className="space-y-2 border rounded-md p-3 bg-background">
+                    <h4 className="text-xs font-medium flex items-center gap-1.5 mb-2">
+                        <Info className="h-3.5 w-3.5" />
+                        {t.settings?.prompts?.variables || "Available Variables"}
+                    </h4>
+                    <div className="space-y-1.5">
+                        {varsByType[type].map((v) => (
+                            <VariableInfo key={v.name} name={v.name} description={v.description} />
+                        ))}
+                    </div>
+                </div>
+
+                <Textarea
+                    value={templateState[type]}
+                    onChange={(e) => handleChange(type, e.target.value)}
+                    className="font-mono text-xs min-h-[400px]"
+                    placeholder={PROMPT_DEFAULTS[type]}
+                />
+            </div>
+        );
+    };
+
     return (
         <div className="space-y-4 border rounded-lg p-4 bg-muted/30">
             <Tabs defaultValue="analyze" className="w-full">
-                <TabsList className="grid w-full grid-cols-2">
+                <TabsList className="grid w-full grid-cols-3">
                     <TabsTrigger value="analyze">
                         {t.settings?.prompts?.analysisTab || "Analysis Prompt"}
                     </TabsTrigger>
                     <TabsTrigger value="similar">
                         {t.settings?.prompts?.similarTab || "Similar Question Prompt"}
                     </TabsTrigger>
+                    <TabsTrigger value="knowledgeTags">
+                        {t.settings?.prompts?.knowledgeTagsTab || "Knowledge Tags"}
+                    </TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="analyze" className="space-y-4 py-4">
-                    <div className="space-y-4">
-                        <div className="flex justify-between items-center">
-                            <Label className="text-base font-semibold">
-                                {t.settings?.prompts?.customAnalysis || "Custom Analysis Template"}
-                            </Label>
-                            <Button variant="outline" size="sm" onClick={() => handleReset('analyze')}>
-                                <RotateCcw className="w-4 h-4 mr-2" />
-                                {t.settings?.prompts?.reset || "Reset Default"}
-                            </Button>
-                        </div>
-
-                        <WarningBox />
-
-                        <div className="space-y-2 border rounded-md p-3 bg-background">
-                            <h4 className="text-xs font-medium flex items-center gap-1.5 mb-2">
-                                <Info className="h-3.5 w-3.5" />
-                                {t.settings?.prompts?.variables || "Available Variables"}
-                            </h4>
-                            <div className="space-y-1.5">
-                                <VariableInfo
-                                    name="language_instruction"
-                                    description={t.settings?.prompts?.vars?.languageInstruction || "Injects instructions based on target language (e.g., keep English questions in English but analysis in Chinese)."}
-                                />
-                                <VariableInfo
-                                    name="knowledge_points_list"
-                                    description={t.settings?.prompts?.vars?.knowledgePointsList || "Injects the standard list of knowledge point tags for the specific subject."}
-                                />
-                                <VariableInfo
-                                    name="provider_hints"
-                                    description={t.settings?.prompts?.vars?.providerHints || "System-injected hints (e.g., enforcing JSON format)."}
-                                />
-                            </div>
-                        </div>
-
-                        <Textarea
-                            value={analyzeTemplate}
-                            onChange={(e) => handleChange('analyze', e.target.value)}
-                            className="font-mono text-xs min-h-[400px]"
-                            placeholder={DEFAULT_ANALYZE_TEMPLATE}
-                        />
-                    </div>
+                    {renderTemplateTab('analyze')}
                 </TabsContent>
 
                 <TabsContent value="similar" className="space-y-4 py-4">
-                    <div className="space-y-4">
-                        <div className="flex justify-between items-center">
-                            <Label className="text-base font-semibold">
-                                {t.settings?.prompts?.customSimilar || "Custom Similar Question Template"}
-                            </Label>
-                            <Button variant="outline" size="sm" onClick={() => handleReset('similar')}>
-                                <RotateCcw className="w-4 h-4 mr-2" />
-                                {t.settings?.prompts?.reset || "Reset Default"}
-                            </Button>
-                        </div>
+                    {renderTemplateTab('similar')}
+                </TabsContent>
 
-                        <WarningBox />
-
-                        <div className="space-y-2 border rounded-md p-3 bg-background">
-                            <h4 className="text-xs font-medium flex items-center gap-1.5 mb-2">
-                                <Info className="h-3.5 w-3.5" />
-                                {t.settings?.prompts?.variables || "Available Variables"}
-                            </h4>
-                            <div className="space-y-1.5">
-                                <VariableInfo
-                                    name="difficulty_level"
-                                    description={t.settings?.prompts?.vars?.difficultyLevel || "Target difficulty level."}
-                                />
-                                <VariableInfo
-                                    name="difficulty_instruction"
-                                    description={t.settings?.prompts?.vars?.difficultyInstruction || "Specific writing instructions for the target difficulty."}
-                                />
-                                <VariableInfo
-                                    name="original_question"
-                                    description={t.settings?.prompts?.vars?.originalQuestion || "The full text of the original question."}
-                                />
-                                <VariableInfo
-                                    name="knowledge_points"
-                                    description={t.settings?.prompts?.vars?.knowledgePoints || "List of knowledge points to test."}
-                                />
-                                <VariableInfo
-                                    name="language_instruction"
-                                    description={t.settings?.prompts?.vars?.languageInstructionShort || "Language formatting instructions."}
-                                />
-                            </div>
-                        </div>
-
-                        <Textarea
-                            value={similarTemplate}
-                            onChange={(e) => handleChange('similar', e.target.value)}
-                            className="font-mono text-xs min-h-[400px]"
-                            placeholder={DEFAULT_SIMILAR_TEMPLATE}
-                        />
-                    </div>
+                <TabsContent value="knowledgeTags" className="space-y-4 py-4">
+                    {renderTemplateTab('knowledgeTags')}
                 </TabsContent>
             </Tabs>
         </div>

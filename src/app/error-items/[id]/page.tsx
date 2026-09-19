@@ -169,17 +169,6 @@ export default function ErrorDetailPage() {
     }, [analysisScreenshotStream]);
 
     useEffect(() => {
-        // Fetch custom question sources
-        apiClient.get<{ id: string; name: string }[]>("/api/question-sources")
-            .then(sources => {
-                const sourceNames = sources.map(s => s.name);
-                setCustomQuestionSources(sourceNames);
-            })
-            .catch(err => {
-                console.error("Failed to fetch custom question sources:", err);
-                setCustomQuestionSources([]);
-            });
-
         // Fetch 用户已用过的自定义作答状态（下拉框历史项）
         apiClient.get<{ statuses: string[] }>("/api/error-items/mistake-statuses")
             .then(res => setCustomMistakeStatuses(res.statuses || []))
@@ -192,6 +181,25 @@ export default function ErrorDetailPage() {
             fetchItem(params.id as string);
         }
     }, [params.id]);
+
+    // 获取自定义题目来源：跟随错题所属笔记本过滤，
+    // 只显示该笔记本内错题实际用过的来源，其他科目的来源不显示
+    // （编辑表单中切换笔记本时随 notebookInput 重新过滤）
+    useEffect(() => {
+        const subjectId = notebookInput || item?.subjectId || null;
+        const url = subjectId
+            ? `/api/question-sources?subjectId=${encodeURIComponent(subjectId)}`
+            : "/api/question-sources";
+        apiClient.get<{ id: string; name: string }[]>(url)
+            .then(sources => {
+                const sourceNames = sources.map(s => s.name);
+                setCustomQuestionSources(sourceNames);
+            })
+            .catch(err => {
+                console.error("Failed to fetch custom question sources:", err);
+                setCustomQuestionSources([]);
+            });
+    }, [notebookInput, item?.subjectId]);
 
     const fetchItem = async (id: string) => {
         try {
@@ -271,8 +279,11 @@ export default function ErrorDetailPage() {
         }
 
         try {
-            // Find the source ID by name
-            const sources = await apiClient.get<{ id: string; name: string }[]>("/api/question-sources");
+            // Find the source ID by name（与下拉列表同一作用域：限当前笔记本过滤）
+            const subjectId = notebookInput || item?.subjectId || null;
+            const sources = await apiClient.get<{ id: string; name: string }[]>(
+                subjectId ? `/api/question-sources?subjectId=${encodeURIComponent(subjectId)}` : "/api/question-sources"
+            );
             const sourceToDelete = sources.find(s => s.name === sourceName);
 
             if (!sourceToDelete) {

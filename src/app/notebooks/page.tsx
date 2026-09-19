@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { BackButton } from "@/components/ui/back-button";
-import { Plus, House } from "lucide-react";
+import { Plus, House, Bot } from "lucide-react";
 import Link from "next/link";
 import { NotebookCard } from "@/components/notebook-card";
 import { CreateNotebookDialog } from "@/components/create-notebook-dialog";
@@ -91,7 +91,7 @@ export default function NotebooksPage() {
         <main className="min-h-screen p-4 md:p-8 bg-background">
             <div className="max-w-6xl mx-auto space-y-8">
                 <div className="flex items-start gap-4">
-                    <BackButton fallbackUrl="/" />
+                    <BackButton fallbackUrl="/upload" />
                     <div className="flex-1 space-y-1">
                         <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">{t.notebooks?.title || "My Notebooks"}</h1>
                         <p className="text-muted-foreground text-sm sm:text-base">
@@ -99,6 +99,15 @@ export default function NotebooksPage() {
                         </p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
+                        <Link href="/">
+                            <Button variant="outline" size="sm" className="hidden sm:flex" title="AI 助手">
+                                <Bot className="mr-2 h-4 w-4" />
+                                AI 助手
+                            </Button>
+                            <Button variant="outline" size="icon" className="sm:hidden" title="AI 助手">
+                                <Bot className="h-4 w-4" />
+                            </Button>
+                        </Link>
                         <Button onClick={() => setDialogOpen(true)} size="sm" className="hidden sm:flex">
                             <Plus className="mr-2 h-4 w-4" />
                             {t.notebooks?.create || "New Notebook"}
@@ -106,8 +115,8 @@ export default function NotebooksPage() {
                         <Button onClick={() => setDialogOpen(true)} size="icon" className="sm:hidden">
                             <Plus className="h-4 w-4" />
                         </Button>
-                        <Link href="/">
-                            <Button variant="ghost" size="icon">
+                        <Link href="/upload">
+                            <Button variant="ghost" size="icon" title="录入错题">
                                 <House className="h-5 w-5" />
                             </Button>
                         </Link>

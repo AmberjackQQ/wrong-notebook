@@ -83,47 +83,14 @@ export async function GET(req: Request) {
             };
         }
 
-        // Chapter filter (第二级筛选：章节)
-        // 如果指定了 chapter，需要找到该章节下所有子标签的 ID，然后过滤错题
-        const chapter = searchParams.get("chapter");
-        if (chapter) {
-            // 查找该章节标签及其所有后代的ID
-            const chapterTagIds = await findChapterDescendantTagIds(chapter, user.id);
-            if (chapterTagIds.length > 0) {
-                whereClause.tags = {
-                    some: {
-                        id: { in: chapterTagIds }
-                    }
-                };
-            } else {
-                // 章节不存在或没有子标签，应返回空结果
-                // 但为了不破坏其他条件，我们添加一个必然为假的条件
-                whereClause.id = "__IMPOSSIBLE_ID__";
-            }
-        }
-
-        // Tag filter (第三级筛选：具体知识点)
+        // Tag filter (具体知识点)
         const tags = searchParams.get("tags");
-        if (tags && !chapter) {
+        if (tags) {
             // 支持多选标签：逗号分隔的标签列表
             const tagList = tags.split(",").filter(t => t.trim());
 
             if (tagList.length > 0) {
                 // 使用 OR 条件：只要匹配任意一个标签即可
-                whereClause.tags = {
-                    some: {
-                        name: {
-                            in: tagList
-                        }
-                    }
-                };
-            }
-        } else if (tags && chapter) {
-            // 如果同时有 chapter 和 tags，优先用 tags 进一步过滤
-            // 覆盖 chapter 的条件
-            const tagList = tags.split(",").filter(t => t.trim());
-
-            if (tagList.length > 0) {
                 whereClause.tags = {
                     some: {
                         name: {
@@ -148,6 +115,15 @@ export async function GET(req: Request) {
         const paperLevel = searchParams.get("paperLevel");
         if (paperLevel && paperLevel !== "all") {
             whereClause.paperLevel = paperLevel;
+        }
+
+        // Print count filter (只显示打印次数小于 N 的题目)
+        const printCountLt = searchParams.get("printCountLt");
+        if (printCountLt) {
+            const limit = parseInt(printCountLt, 10);
+            if (!Number.isNaN(limit)) {
+                whereClause.printCount = { lt: limit };
+            }
         }
 
         // 将所有 AND 条件合并到 whereClause
@@ -279,39 +255,4 @@ function buildGradeFilter(gradeSemester: string): Prisma.ErrorItemWhereInput {
     }
 
     return { OR: orConditions };
-}
-
-// 查找章节标签及其所有后代标签的 ID
-async function findChapterDescendantTagIds(chapterName: string, userId: string): Promise<string[]> {
-    // 1. 找到章节标签本身 (系统标签或用户自定义标签)
-    const chapterTag = await prisma.knowledgeTag.findFirst({
-        where: {
-            name: chapterName,
-            OR: [
-                { isSystem: true },
-                { userId: userId },
-            ],
-        },
-        select: { id: true }
-    });
-
-    if (!chapterTag) return [];
-
-    // 2. 递归查找所有后代标签
-    const descendantIds: string[] = [chapterTag.id];
-    const queue: string[] = [chapterTag.id];
-
-    while (queue.length > 0) {
-        const parentId = queue.shift()!;
-        const children = await prisma.knowledgeTag.findMany({
-            where: { parentId: parentId },
-            select: { id: true }
-        });
-        for (const child of children) {
-            descendantIds.push(child.id);
-            queue.push(child.id);
-        }
-    }
-
-    return descendantIds;
 }

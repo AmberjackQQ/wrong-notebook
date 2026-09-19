@@ -27,6 +27,15 @@ export const ParsedQuestionSchema = z.object({
 export type ParsedQuestionFromSchema = z.infer<typeof ParsedQuestionSchema>;
 
 /**
+ * 知识点标签建议结果（suggestKnowledgeTags）
+ */
+export const SuggestTagsSchema = z.object({
+    knowledgePoints: z.array(z.string().min(1)).min(1).max(8),
+});
+
+export type SuggestTagsResult = z.infer<typeof SuggestTagsSchema>;
+
+/**
  * Validates and parses AI response JSON
  * @param data - Raw JSON data from AI
  * @returns Validated ParsedQuestion object
