@@ -12,12 +12,71 @@ interface MarkdownRendererProps {
 const isSafeHref = (href: string): boolean =>
     href.startsWith('/') || href.startsWith('#') || /^https?:\/\//i.test(href);
 
+// 整行仅为"视觉单元"（图片或选项标签）时视为可合并行：
+// - markdown 图片 ![alt](src)
+// - 裸 <img> 标签
+// - div 包裹的上述元素（PaddleOCR 输出形如 <div style="text-align:center;"><img/></div>），
+//   内层剥掉图片后允许残留很短的选项标签文本（如 "A."、"①"）
+const isVisualUnitLine = (line: string): boolean => {
+    const t = line.trim();
+    if (!t) return false;
+    const divMatch = t.match(/^<div[^>]*>([\s\S]*)<\/div>$/i);
+    const inner = divMatch ? divMatch[1] : t;
+    const withoutImages = inner
+        .replace(/!\[[^\]]*\]\([^)\s]+\)/g, '')
+        .replace(/<img\b[^>]*\/?>/gi, '');
+    return withoutImages.trim().length <= 10 && !/[<>]/.test(withoutImages);
+};
+
+// 相邻视觉单元行合并为一行，并剥掉块级 div 包裹：图片成为外层块容器的行内子元素，
+// 横向排成一行而非逐行竖排，且 width="N%" 等百分比尺寸相对外层容器正常生效
+// （div 转成 shrink-to-fit 的行内容器会让百分比宽度失效）。行间空行被容忍（合并时
+// 丢弃）；遇到普通文本行则结束合并并保留原有空行，图片与正文的段落间距不受影响
+const groupConsecutiveVisualLines = (text: string): string => {
+    const lines = text.split('\n');
+    const out: string[] = [];
+    let run: string[] = [];
+    let pendingBlanks: string[] = [];
+    const flushRun = () => {
+        if (run.length > 0) {
+            out.push(run
+                .join(' ')
+                .replace(/<div\b[^>]*>/gi, '')
+                .replace(/<\/div>/gi, ' ')
+                // Tailwind preflight 将 img 设为 display:block（每图强制独占一行），
+                // 合并行内的图片必须恢复行内排列
+                .replace(/<img\b([^>]*?)\s*\/?>/gi, (m, attrs: string) => {
+                    const inline = /style="/i.test(attrs)
+                        ? attrs.replace(/style="/i, 'style="display: inline-block; ')
+                        : `${attrs} style="display: inline-block;"`;
+                    return `<img ${inline.trim()} />`;
+                }));
+            run = [];
+        }
+    };
+    for (const line of lines) {
+        if (isVisualUnitLine(line)) {
+            run.push(line.trim());
+            pendingBlanks = [];
+        } else if (line.trim() === '' && run.length > 0) {
+            pendingBlanks.push(line);
+        } else {
+            flushRun();
+            out.push(...pendingBlanks);
+            pendingBlanks = [];
+            out.push(line);
+        }
+    }
+    flushRun();
+    return out.join('\n');
+};
+
 // Simple inline markdown processor
 const processInlineMarkdown = (text: string): string => {
     return text
         // Markdown 图片 ![alt](src) → <img>（PaddleOCR 结果中内联的 data URL 图片）；
         // 必须在换行替换前处理（src 中虽无换行，但保持替换顺序清晰）
-        .replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, '<img src="$2" alt="$1" style="max-width: 100%; height: auto;" />')
+        .replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, '<img src="$2" alt="$1" style="display: inline-block; max-width: 100%; height: auto; vertical-align: middle; margin: 0 2px;" />')
         // Markdown 链接 [text](href) → <a>（图片规则之后处理，剩余的 [..](..) 即链接）；
         // href 不合法时保留原文本
         .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (match, linkText: string, href: string) =>
@@ -113,6 +172,7 @@ export function MarkdownRenderer({ content, className = '' }: MarkdownRendererPr
     // Process content inline: render mixed markdown and LaTeX without line breaks
     const renderedContent = useMemo(() => {
         if (!content) return null;
+        const normalizedContent = groupConsecutiveVisualLines(content);
 
         const elements: React.ReactNode[] = [];
 
@@ -169,16 +229,16 @@ export function MarkdownRenderer({ content, className = '' }: MarkdownRendererPr
         let htmlMatch: RegExpExecArray | null;
         let segIndex = 0;
 
-        while ((htmlMatch = htmlBlockRegex.exec(content)) !== null) {
+        while ((htmlMatch = htmlBlockRegex.exec(normalizedContent)) !== null) {
             if (htmlMatch.index > cursor) {
-                pushTextSegment(content.substring(cursor, htmlMatch.index), segIndex);
+                pushTextSegment(normalizedContent.substring(cursor, htmlMatch.index), segIndex);
                 segIndex += 1;
             }
             elements.push(<HtmlBlock key={`html-${htmlMatch.index}`} html={htmlMatch[0]} />);
             cursor = htmlMatch.index + htmlMatch[0].length;
         }
-        if (cursor < content.length) {
-            pushTextSegment(content.substring(cursor), segIndex);
+        if (cursor < normalizedContent.length) {
+            pushTextSegment(normalizedContent.substring(cursor), segIndex);
         }
 
         return elements;

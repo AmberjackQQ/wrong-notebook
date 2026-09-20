@@ -69,13 +69,16 @@ const suggestTagsViaAnthropic = async (prompt: string): Promise<string[]> => {
         },
         body: JSON.stringify({
             model,
-            max_tokens: 1024,
+            // 模型内部思考也计入 max_tokens：过小时难题（如多步几何证明）思考耗尽
+            // 预算，文本输出为 0（stop_reason=max_tokens），标签解析为空
+            max_tokens: 8192,
             messages: [{
                 role: 'user',
                 content: `${prompt}\n\n请为上述题目标注知识点，只输出 <knowledge_points> 标签内容。`,
             }],
         }),
-        signal: AbortSignal.timeout(60000),
+        // 难题（如新定义压轴题）模型思考可超 60s，过短会在标签输出前被掐断成 500
+        signal: AbortSignal.timeout(240000),
     });
 
     if (!upstream.ok) {
