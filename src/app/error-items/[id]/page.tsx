@@ -16,7 +16,7 @@ import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, CheckCircle, XCircle, RefreshCw, Trash2, Edit, Save, X, Box, Loader2, Plus, ChevronDown, Monitor, Printer, ScanText } from "lucide-react";
+import { ArrowLeft, CheckCircle, XCircle, RefreshCw, Trash2, Edit, Save, X, Box, Loader2, Plus, ChevronDown, Monitor, Printer, ScanText, Sparkles } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import Link from "next/link";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -105,6 +105,8 @@ export default function ErrorDetailPage() {
     const [currentImageUrl, setCurrentImageUrl] = useState<string | null>(null);
     const [isEditingTags, setIsEditingTags] = useState(false);
     const [tagsInput, setTagsInput] = useState<string[]>([]);
+    const [isSuggestingTags, setIsSuggestingTags] = useState(false);
+    const [tagsAiError, setTagsAiError] = useState<string | null>(null);
     const [isEditingMetadata, setIsEditingMetadata] = useState(false);
     const [gradeSemesterInput, setGradeSemesterInput] = useState("");
     const [paperLevelInput, setPaperLevelInput] = useState("模拟考试");
@@ -1069,6 +1071,7 @@ export default function ErrorDetailPage() {
             } else {
                 setTagsInput([]);
             }
+            setTagsAiError(null);
             setIsEditingTags(true);
         }
     };
@@ -1092,6 +1095,50 @@ export default function ErrorDetailPage() {
     const cancelEditingTags = () => {
         setIsEditingTags(false);
         setTagsInput([]);
+        setTagsAiError(null);
+    };
+
+    // 与编辑页「校对与保存」的知识点「AI 生成」完全一致：
+    // 题目文本 → /api/ai/tags → 结果与已输入标签合并去重（不丢手动输入项），保存仍走 Save
+    const handleSuggestTags = async () => {
+        const questionText = item?.questionText?.trim();
+        if (!questionText) {
+            alert(t.editor?.enterQuestionFirst || '请先输入题目文本');
+            return;
+        }
+
+        setIsSuggestingTags(true);
+        setTagsAiError(null);
+        try {
+            const response = await fetch("/api/ai/tags", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    questionText,
+                    answerText: item?.answerText || undefined,
+                    analysis: item?.analysis || undefined,
+                    subject: inferSubjectFromName(item?.subject?.name || null) || undefined,
+                    gradeSemester: item?.gradeSemester || undefined,
+                }),
+            });
+
+            const result = await response.json().catch(() => null);
+
+            if (!response.ok) {
+                throw new Error(result?.message || t.editor?.tagsAiError || "知识点生成失败");
+            }
+
+            const tags: string[] = Array.isArray(result?.knowledgePoints) ? result.knowledgePoints : [];
+            if (tags.length === 0) throw new Error(t.editor?.tagsAiError || "知识点生成失败");
+
+            setTagsInput(prev => Array.from(new Set([...prev, ...tags])));
+        } catch (error) {
+            console.error("Knowledge tags suggestion failed:", error);
+            const message = error instanceof Error ? error.message : null;
+            setTagsAiError(message || t.editor?.tagsAiError || "知识点生成失败");
+        } finally {
+            setIsSuggestingTags(false);
+        }
     };
 
     const startEditingMetadata = () => {
@@ -1799,7 +1846,27 @@ export default function ErrorDetailPage() {
                                 <div className="space-y-2">
                                     <div className="flex justify-between items-center">
                                         <h4 className="text-sm font-semibold">{t.editor?.tags || 'Knowledge Tags'}</h4>
-                                        {!isEditingTags && (
+                                        {isEditingTags ? (
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                className="h-7 px-2.5 text-xs"
+                                                onClick={handleSuggestTags}
+                                                disabled={isSuggestingTags || !item.questionText?.trim()}
+                                            >
+                                                {isSuggestingTags ? (
+                                                    <>
+                                                        <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                                                        {t.editor?.tagsGenerating || '生成中…'}
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <Sparkles className="mr-1 h-3.5 w-3.5" />
+                                                        {t.editor?.tagsAiGenerate || 'AI 生成'}
+                                                    </>
+                                                )}
+                                            </Button>
+                                        ) : (
                                             <Button
                                                 variant="ghost"
                                                 size="sm"
@@ -1820,6 +1887,9 @@ export default function ErrorDetailPage() {
                                                 subject={inferSubjectFromName(item.subject?.name || null) || undefined}
                                                 gradeStage={educationStage}
                                             />
+                                            {tagsAiError && (
+                                                <p className="text-xs text-red-500">{tagsAiError}</p>
+                                            )}
                                             <p className="text-xs text-muted-foreground">
                                                 {t.editor?.tagsHint || '💡 Select from standard or custom tags'}
                                             </p>
