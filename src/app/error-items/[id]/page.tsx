@@ -1213,6 +1213,9 @@ export default function ErrorDetailPage() {
     const [isEditingAnalysis, setIsEditingAnalysis] = useState(false);
     const [analysisInput, setAnalysisInput] = useState("");
     const [analysisImages, setAnalysisImages] = useState<Array<{ id: string; dataUrl: string; name: string }>>([]);
+    // 解析OCR：识别解析图片的文字（飞桨 PaddleOCR），与题目OCR同一套路由
+    const [isAnalysisOcrRunning, setIsAnalysisOcrRunning] = useState(false);
+    const [analysisOcrText, setAnalysisOcrText] = useState("");
 
     const [isEditingMistake, setIsEditingMistake] = useState(false);
     const [wrongAnswerInput, setWrongAnswerInput] = useState("");
@@ -1488,6 +1491,53 @@ export default function ErrorDetailPage() {
         setIsEditingAnalysis(false);
         setAnalysisInput("");
         setAnalysisImages([]);
+        setAnalysisOcrText("");
+    };
+
+    // 解析 OCR 识别源：编辑中未保存的解析图片集合优先，其次已保存的解析图片，取第一张
+    const getAnalysisOcrImage = (): string | null => {
+        let source: Array<{ dataUrl?: string }> = analysisImages;
+        if (source.length === 0) {
+            try {
+                source = JSON.parse(item?.analysisImages || '[]');
+            } catch {
+                source = [];
+            }
+        }
+        return source[0]?.dataUrl || null;
+    };
+
+    const handleOcrAnalysisImage = async () => {
+        const image = getAnalysisOcrImage();
+        if (!image) {
+            alert('没有可识别的解析图片');
+            return;
+        }
+        setIsAnalysisOcrRunning(true);
+        try {
+            // 与题目OCR相同：路由内部最长轮询飞桨任务 5 分钟，客户端超时必须大于它
+            const result = await apiClient.post<{ markdown: string }>('/api/ocr/paddle', {
+                image,
+            }, { timeout: 320000 });
+            setAnalysisOcrText(result.markdown || '');
+            // 识别结果直接填入解析编辑框（点击OCR即明确要用图片文字作为解析），
+            // 点保存后持久化并显示在详情页；取消编辑可放弃
+            if (result.markdown) {
+                setAnalysisInput(result.markdown);
+            }
+            if (!result.markdown) {
+                alert('未识别到文字内容');
+            }
+        } catch (error: any) {
+            console.error('Analysis OCR failed:', error);
+            const msg = error?.data?.message || error?.message || '';
+            const friendly = String(msg).includes('AI_TIMEOUT_ERROR')
+                ? '识别超时（题目较复杂或服务繁忙），请稍后重试'
+                : msg || '请稍后重试';
+            alert(`OCR 识别失败：${friendly}`);
+        } finally {
+            setIsAnalysisOcrRunning(false);
+        }
     };
 
     // --- Mistake Analysis Handlers ---
@@ -2382,6 +2432,45 @@ export default function ErrorDetailPage() {
                                             rows={12}
                                             existingImages={analysisImages}
                                         />
+                                        <div className="space-y-2">
+                                            <div className="flex items-center justify-between gap-2">
+                                                <label className="text-sm text-muted-foreground">
+                                                    解析OCR（识别解析图片中的文字）
+                                                </label>
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    onClick={handleOcrAnalysisImage}
+                                                    disabled={isAnalysisOcrRunning || !getAnalysisOcrImage()}
+                                                    title={!getAnalysisOcrImage() ? '该题目没有解析图片可识别' : undefined}
+                                                >
+                                                    {isAnalysisOcrRunning ? (
+                                                        <>
+                                                            <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                                                            识别中，可能需要1~5分钟…
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <ScanText className="mr-1 h-4 w-4" />
+                                                            OCR识别解析图片
+                                                        </>
+                                                    )}
+                                                </Button>
+                                            </div>
+                                            <Textarea
+                                                value={analysisOcrText}
+                                                onChange={(e) => setAnalysisOcrText(e.target.value)}
+                                                placeholder={'点击右上角"OCR识别解析图片"按钮，识别结果将显示在这里'}
+                                                rows={8}
+                                                className="w-full font-mono text-sm"
+                                            />
+                                            {analysisOcrText && (
+                                                <div className="rounded-md border p-3">
+                                                    <div className="mb-1 text-xs text-muted-foreground">渲染预览</div>
+                                                    <MarkdownRenderer content={analysisOcrText} />
+                                                </div>
+                                            )}
+                                        </div>
 
                                         <div className="flex gap-2">
                                             <Button size="sm" onClick={saveAnalysisHandler}>

@@ -84,6 +84,8 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
     // 图片状态管理
     const [answerImages, setAnswerImages] = useState<Array<{ id: string; dataUrl: string; name: string }>>([]);
     const [analysisImages, setAnalysisImages] = useState<Array<{ id: string; dataUrl: string; name: string }>>([]);
+    // 解析OCR：识别解析图片的文字（飞桨 PaddleOCR），与题目OCR同一套路由
+    const [isAnalysisOcrRunning, setIsAnalysisOcrRunning] = useState(false);
 
     const [educationStage, setEducationStage] = useState<string | undefined>(undefined);
     const [notebooks, setNotebooks] = useState<Notebook[]>([]);
@@ -210,6 +212,39 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
             alert(`OCR 识别失败：${friendly}`);
         } finally {
             setIsOcrRunning(false);
+        }
+    };
+
+    // OCR 识别解析图片：与题目OCR同款——识别解析图片中的文字，结果直接填入解析思路编辑框
+    const handleOcrAnalysisImage = async () => {
+        const image = analysisImages[0]?.dataUrl;
+        if (!image) {
+            alert('没有可识别的解析图片');
+            return;
+        }
+
+        setIsAnalysisOcrRunning(true);
+        try {
+            // OCR 路由内部最长轮询飞桨任务 5 分钟（300s），客户端超时必须大于它，否则任务未完成即被中止
+            const result = await apiClient.post<{ markdown: string }>('/api/ocr/paddle', {
+                image,
+            }, { timeout: 320000 });
+            if (result.markdown) {
+                // 识别结果直接填入解析思路（点击OCR即明确要用图片文字作为解析），保存时持久化
+                setData(prev => ({ ...prev, analysis: result.markdown }));
+            } else {
+                alert('未识别到文字内容');
+            }
+        } catch (error: unknown) {
+            console.error('Analysis OCR failed:', error);
+            const apiError = error as { data?: { message?: string }; status?: number };
+            const msg = apiError.data?.message || (error instanceof Error ? error.message : '');
+            const friendly = msg.includes('AI_TIMEOUT_ERROR')
+                ? '识别超时（题目较复杂或服务繁忙），请稍后重试'
+                : msg || '请稍后重试';
+            alert(`OCR 识别失败：${friendly}`);
+        } finally {
+            setIsAnalysisOcrRunning(false);
         }
     };
 
@@ -668,6 +703,29 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
                             rows={8}
                             existingImages={analysisImages}
                         />
+                        <Button
+                            variant="default"
+                            size="sm"
+                            onClick={handleOcrAnalysisImage}
+                            disabled={isAnalysisOcrRunning || analysisImages.length === 0}
+                            title={analysisImages.length === 0 ? '没有可识别的解析图片（先在上方解析框粘贴或上传图片）' : undefined}
+                            className="w-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-medium"
+                        >
+                            {isAnalysisOcrRunning ? (
+                                <>
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    识别中，可能需要1~5分钟…
+                                </>
+                            ) : (
+                                <>
+                                    <ScanText className="mr-2 h-4 w-4" />
+                                    OCR识别解析图片
+                                </>
+                            )}
+                        </Button>
+                        <p className="text-xs text-muted-foreground">
+                            💡 用飞桨 PaddleOCR 识别解析图片中的文字，识别结果将填入上方解析思路框
+                        </p>
                     </div>
 
                     <Card>

@@ -61,6 +61,8 @@ function PrintPreviewContent() {
     const [enhanceAnswerImages, setEnhanceAnswerImages] = useState(true);
     // 将同一增强滤镜也应用到题目图片（含原始问题图片，默认开启）
     const [enhanceQuestionImages, setEnhanceQuestionImages] = useState(true);
+    // 将同一增强滤镜也应用到解析图片（默认开启）
+    const [enhanceAnalysisImages, setEnhanceAnalysisImages] = useState(true);
     // 勾选后点击“打印 / 保存 PDF”时，把本次所选题目的打印次数各 +1
     const [incrementPrintCount, setIncrementPrintCount] = useState(false);
 
@@ -464,7 +466,7 @@ function PrintPreviewContent() {
                                 step="0.05"
                                 value={enhanceContrast}
                                 onChange={(e) => setEnhanceContrast(Number(e.target.value))}
-                                disabled={!enhanceAnswerImages && !enhanceQuestionImages}
+                                disabled={!enhanceAnswerImages && !enhanceQuestionImages && !enhanceAnalysisImages}
                                 className="w-16 sm:w-20 accent-primary"
                             />
                             <span className="whitespace-nowrap text-xs text-muted-foreground">亮度 {Math.round(enhanceBrightness * 100)}%</span>
@@ -475,14 +477,14 @@ function PrintPreviewContent() {
                                 step="0.01"
                                 value={enhanceBrightness}
                                 onChange={(e) => setEnhanceBrightness(Number(e.target.value))}
-                                disabled={!enhanceAnswerImages && !enhanceQuestionImages}
+                                disabled={!enhanceAnswerImages && !enhanceQuestionImages && !enhanceAnalysisImages}
                                 className="w-16 sm:w-20 accent-primary"
                             />
                             <Button
                                 size="sm"
                                 variant="ghost"
                                 className="h-6 px-2 text-xs"
-                                disabled={!enhanceAnswerImages && !enhanceQuestionImages}
+                                disabled={!enhanceAnswerImages && !enhanceQuestionImages && !enhanceAnalysisImages}
                                 onClick={() => { setEnhanceContrast(0.8); setEnhanceBrightness(0.82); }}
                             >
                                 重置
@@ -598,6 +600,18 @@ function PrintPreviewContent() {
                                     className="rounded border-gray-300 text-primary focus:ring-primary w-3.5 h-3.5 sm:w-4 sm:h-4"
                                 />
                                 {'应用到题目图片'}
+                            </label>
+                            <label
+                                className="flex items-center gap-1.5 text-xs sm:text-sm cursor-pointer whitespace-nowrap hover:text-primary transition-colors"
+                                title="将同样的对比/亮度滤镜应用到解析图片"
+                            >
+                                <input
+                                    type="checkbox"
+                                    checked={enhanceAnalysisImages}
+                                    onChange={(e) => setEnhanceAnalysisImages(e.target.checked)}
+                                    className="rounded border-gray-300 text-primary focus:ring-primary w-3.5 h-3.5 sm:w-4 sm:h-4"
+                                />
+                                {'应用到解析图片'}
                             </label>
                             <label className="flex items-center gap-1.5 text-xs sm:text-sm cursor-pointer whitespace-nowrap hover:text-primary transition-colors">
                                 <input
@@ -863,6 +877,10 @@ function PrintPreviewContent() {
                                                         {images.map((img: any, idx: number) => {
                                                             const widthKey = `${item.id}:analysis:${idx}`;
                                                             const shrinkFirst = analysisFix?.type === "shrink" && idx === 0;
+                                                            // 与答案/题目图片同款增强滤镜（CSS filter 不影响布局，防孤行测量无需重算）
+                                                            const enhanceFilter = enhanceAnalysisImages
+                                                                ? `contrast(${enhanceContrast.toFixed(2)}) brightness(${enhanceBrightness.toFixed(2)})`
+                                                                : undefined;
                                                             return (
                                                                 <div key={idx} data-frag="analysis-image" data-frag-index={idx} className="break-inside-avoid" style={{ width: '100%' }}>
                                                                     <img
@@ -871,8 +889,8 @@ function PrintPreviewContent() {
                                                                         className="h-auto rounded border"
                                                                         style={
                                                                             shrinkFirst
-                                                                                ? { height: `${analysisFix.avail}px`, width: 'auto', maxWidth: '100%', display: 'block', margin: '0 auto' }
-                                                                                : getAnalysisImageStyle(analysisImageScale, analysisNaturalWidths[widthKey])
+                                                                                ? { height: `${analysisFix.avail}px`, width: 'auto', maxWidth: '100%', display: 'block', margin: '0 auto', filter: enhanceFilter }
+                                                                                : { ...getAnalysisImageStyle(analysisImageScale, analysisNaturalWidths[widthKey]), filter: enhanceFilter }
                                                                         }
                                                                         data-print-shrink={shrinkFirst ? widthKey : undefined}
                                                                         onLoad={(e) => {
