@@ -738,15 +738,23 @@ function PrintPreviewContent() {
                                 className={`print:relative ${reserveAnswerSpace ? "pb-20 print:pb-16" : "pb-6"}`}
                                 style={chunkMinHeightVar(stemPages)}
                             >
-                            {/* QR Code: 与题干同页（第1页），扫码定位本题（打印需要足够大便于手机扫描） */}
-                            {showQRCodes && (
-                                <div className="mb-4 print:flex print:items-center">
+                            {/* QR Code: 与题干同页（第1页），扫码定位本题（打印需要足够大便于手机扫描）；
+                                题目来源从第2页题目栏移到此处，与二维码同行显示在其后 */}
+                            {(showQRCodes || item.paperLevel) && (
+                            <div className="mb-4 flex items-center">
+                                {showQRCodes && (
                                     <QRCodeDisplay
                                         errorItemId={item.id}
                                         size={96}
                                         showLabel={false}
                                     />
-                                </div>
+                                )}
+                                {item.paperLevel && (
+                                    <span className="text-sm text-muted-foreground ml-3">
+                                        {t.printPreview?.paperLevel || 'Paper Level'}: {item.paperLevel.toUpperCase()}
+                                    </span>
+                                )}
+                            </div>
                             )}
 
                             {/* Question Images（受“显示题目图片”开关控制，默认显示，排在题目文字之前） */}
@@ -803,7 +811,7 @@ function PrintPreviewContent() {
                             {renderFooters(`${item.id}:stem`, 1, totalPages)}
                         </div>
 
-                        {/* 题目栏 + 解析 + 答案：打印时另起一页，题目栏（题号/来源/知识点等）随解析、答案显示在第2页 */}
+                        {/* 题目栏 + 解析 + 答案：打印时另起一页，题目栏（题号/知识点等）随解析、答案显示在第2页（题目来源已移至第1页二维码行） */}
                         {(showQuestionHeader || showAnswers || showAnalysis) && (
                         <div
                             data-print-chunk={`${item.id}:answer`}
@@ -821,11 +829,6 @@ function PrintPreviewContent() {
                                     {item.gradeSemester && (
                                         <span className="text-sm text-muted-foreground">
                                             {item.gradeSemester}
-                                        </span>
-                                    )}
-                                    {item.paperLevel && (
-                                        <span className="text-sm text-muted-foreground">
-                                            {t.printPreview?.paperLevel || 'Paper Level'}: {item.paperLevel.toUpperCase()}
                                         </span>
                                     )}
                                     {showQuestionNumber && (
