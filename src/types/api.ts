@@ -73,6 +73,7 @@ export interface ErrorItem {
     gradeSemester?: string | null;
     paperLevel?: string | null;
     questionNumber?: string | null; // 题号
+    printCount?: number | null; // 打印次数（用户手动维护 + 打印时勾选自增）
     answerTime?: string | null; // 答题时间
 
     createdAt: string;

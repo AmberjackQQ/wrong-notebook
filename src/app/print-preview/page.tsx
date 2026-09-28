@@ -675,6 +675,11 @@ function PrintPreviewContent() {
                                         <span className="font-semibold">
                                             {t.printPreview?.questionNumber?.replace('{num}', String(index + 1)) || `Question ${index + 1}`}
                                         </span>
+                                        {typeof item.printCount === 'number' && (
+                                            <span className="ml-auto text-muted-foreground whitespace-nowrap">
+                                                已打印 {item.printCount} 次
+                                            </span>
+                                        )}
                                     </label>
                                 ))}
                             </div>
