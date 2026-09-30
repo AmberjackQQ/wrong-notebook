@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>智能错题本 — 基于 AI 的错题管理系统</title>
+<meta name="description" content="智能错题本（Smart Wrong Notebook）是基于 AI 的错题管理系统：自动识别题目、生成解析与知识点标签、产出同类练习题，支持多错题本管理与一键导出打印，数据默认本地存储。">
+<meta property="og:title" content="智能错题本 — 基于 AI 的错题管理系统">
+<meta property="og:description" content="基于 AI 的错题管理系统：自动解析、知识点标签、同类练习题、多错题本、导出打印。">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230d9488'/%3E%3Cpath d='M9 21V10h4l2 3 2-3h4v11h-4v-5l-2 2.5L15 16v5z' fill='%235eead4'/%3E%3C/svg%3E">
+<style>
+  /* === 配色：青绿（开发者/终端）=== */
+  :root {
+    --bg: #08090d;
+    --bg-soft: #0d0f16;
+    --panel: rgba(148, 163, 184, 0.045);
+    --panel-hover: rgba(148, 163, 184, 0.075);
+    --border: rgba(148, 163, 184, 0.14);
+    --border-strong: rgba(148, 163, 184, 0.24);
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --faint: #64748b;
+    --accent: #2dd4bf;
+    --accent2: #0d9488;
+    --accent-soft: #5eead4;
+    --green: #4ade80;
+    --red: #f87171;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Inter, Roboto, "Helvetica Neue", sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { font-family: var(--sans); background: var(--bg); color: var(--text); line-height: 1.6; -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+  ::selection { background: rgba(45, 212, 191, 0.35); color: #fff; }
+  a { color: inherit; text-decoration: none; }
+  code, pre { font-family: var(--mono); }
+
+  .glow { position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background: radial-gradient(700px 420px at 18% -5%, rgba(45,212,191,0.14), transparent 65%),
+                radial-gradient(560px 380px at 88% 8%, rgba(13,148,136,0.12), transparent 60%),
+                radial-gradient(900px 500px at 50% 110%, rgba(94,234,212,0.05), transparent 60%); }
+  .grid-bg { position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background-image: radial-gradient(rgba(148,163,184,0.13) 1px, transparent 1px);
+    background-size: 34px 34px;
+    -webkit-mask-image: radial-gradient(ellipse 90% 60% at 50% 0%, #000 30%, transparent 75%);
+            mask-image: radial-gradient(ellipse 90% 60% at 50% 0%, #000 30%, transparent 75%);
+    opacity: 0.5; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; position: relative; z-index: 1; }
+
+  /* NAV */
+  header.nav { position: sticky; top: 0; z-index: 50; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    background: rgba(8,9,13,0.72); border-bottom: 1px solid rgba(148,163,184,0.08); }
+  .nav-inner { display: flex; align-items: center; justify-content: space-between; height: 62px; }
+  .brand { display: flex; align-items: center; gap: 11px; font-weight: 700; font-size: 19px; letter-spacing: -0.02em; }
+  .brand .logo-mark { width: 30px; height: 30px; border-radius: 8px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; font-weight: 800; color: #0a0a0a; }
+  .chip { font-size: 11.5px; font-weight: 600; font-family: var(--mono);
+    color: var(--accent-soft); background: rgba(94,234,212,0.1);
+    border: 1px solid rgba(94,234,212,0.28); padding: 2px 9px; border-radius: 999px; }
+  nav.links { display: flex; align-items: center; gap: 26px; font-size: 14.5px; color: var(--muted); }
+  nav.links a:hover { color: var(--text); }
+  .btn { display: inline-flex; align-items: center; gap: 8px; font-size: 14.5px; font-weight: 600;
+    padding: 9px 18px; border-radius: 9px; transition: all 0.18s; cursor: pointer; border: 1px solid transparent; }
+  .btn-primary { background: linear-gradient(135deg, var(--accent), var(--accent2));
+    color: #0a0a0a; box-shadow: 0 4px 22px rgba(45,212,191,0.28); }
+  .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 7px 28px rgba(45,212,191,0.4); }
+  .btn-ghost { border-color: var(--border-strong); color: var(--text); background: rgba(148,163,184,0.05); }
+  .btn-ghost:hover { background: rgba(148,163,184,0.12); border-color: rgba(148,163,184,0.4); }
+
+  /* HERO */
+  .hero { padding: 84px 0 64px; display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 56px; align-items: center; }
+  .eyebrow { display: inline-flex; align-items: center; gap: 10px; font-family: var(--mono); font-size: 12.5px;
+    letter-spacing: 0.06em; color: var(--accent); background: rgba(45,212,191,0.08);
+    border: 1px solid rgba(45,212,191,0.22); border-radius: 999px; padding: 6px 14px; text-transform: uppercase; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); }
+  h1 { font-size: clamp(38px, 5.2vw, 58px); line-height: 1.08; letter-spacing: -0.035em; font-weight: 800; margin: 26px 0 20px; }
+  .grad { background: linear-gradient(100deg, var(--accent-soft) 10%, var(--accent) 55%, var(--accent2) 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .lede { font-size: 17.5px; color: var(--muted); max-width: 56ch; }
+  .lede strong { color: var(--text); font-weight: 600; }
+  .cta-row { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 32px; }
+  .cmd-bar { margin-top: 30px; display: flex; align-items: center; gap: 12px;
+    background: #0a0d14; border: 1px solid var(--border); border-radius: 11px;
+    padding: 13px 16px; max-width: 520px; font-family: var(--mono); font-size: 13.5px; min-width: 0; }
+  .cmd-bar .prompt { color: var(--green); user-select: none; flex-shrink: 0; }
+  .cmd-bar .cmd-wrap { flex: 1 1 auto; min-width: 0; overflow: hidden; }
+  .cmd-bar .cmd { display: block; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .copy { margin-left: auto; background: rgba(148,163,184,0.1); border: 1px solid var(--border);
+    color: var(--muted); font-size: 12px; font-family: var(--mono);
+    padding: 5px 11px; border-radius: 7px; cursor: pointer; transition: all 0.15s; flex-shrink: 0; }
+  .copy:hover { color: var(--text); border-color: var(--border-strong); }
+  .copy.ok { color: var(--green); border-color: rgba(74,222,128,0.4); }
+  .badges { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 34px; }
+  .badge { font-family: var(--mono); font-size: 12.5px; color: var(--muted);
+    border: 1px solid var(--border); background: var(--panel);
+    padding: 5px 13px; border-radius: 999px; transition: all 0.15s; }
+  .badge:hover { color: var(--accent); border-color: rgba(45,212,191,0.35); }
+
+  /* TERMINAL */
+  .terminal { background: linear-gradient(180deg, #0c1018, #0a0d14); border: 1px solid var(--border);
+    border-radius: 14px; box-shadow: 0 30px 70px rgba(0,0,0,0.55), 0 0 0 1px rgba(0,0,0,0.3); overflow: hidden; }
+  .term-bar { display: flex; align-items: center; gap: 7px; padding: 12px 16px;
+    border-bottom: 1px solid rgba(148,163,184,0.1); background: rgba(148,163,184,0.04); }
+  .term-bar i { width: 11px; height: 11px; border-radius: 50%; display: block; }
+  .term-bar i:nth-child(1) { background: #ff5f57; }
+  .term-bar i:nth-child(2) { background: #febc2e; }
+  .term-bar i:nth-child(3) { background: #28c840; }
+  .term-title { margin-left: 10px; font-family: var(--mono); font-size: 12px; color: var(--faint); }
+  .term-body { padding: 20px 22px 24px; font-family: var(--mono); font-size: 12.5px; line-height: 1.75; overflow-x: auto; }
+  .term-body .line { white-space: pre; }
+  .t-prompt { color: var(--green); }
+  .t-cmd { color: #f1f5f9; }
+  .t-out { color: var(--muted); }
+  .t-hdr { color: var(--accent); }
+  .t-err { color: var(--red); }
+  .t-warn { color: var(--accent-soft); }
+  .t-note { color: var(--faint); }
+  .t-ok { color: var(--green); }
+  .t-gap { display: block; height: 10px; }
+
+  /* SECTIONS */
+  section { padding: 88px 0; position: relative; z-index: 1; }
+  .label { font-family: var(--mono); font-size: 12.5px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--accent); margin-bottom: 14px; }
+  h2 { font-size: clamp(28px, 3.6vw, 40px); letter-spacing: -0.03em; font-weight: 750; line-height: 1.15; }
+  .sub { color: var(--muted); font-size: 17px; margin-top: 14px; max-width: 62ch; }
+
+  /* FEATURE CARDS */
+  .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 52px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 15px;
+    padding: 26px 24px; transition: all 0.2s; }
+  .card:hover { background: var(--panel-hover); border-color: rgba(45,212,191,0.3); transform: translateY(-3px); }
+  .card .ico { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center;
+    background: rgba(45,212,191,0.1); border: 1px solid rgba(45,212,191,0.22); margin-bottom: 17px; }
+  .card .ico svg { width: 20px; height: 20px; stroke: var(--accent); fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .card h3 { font-size: 16.5px; font-weight: 650; letter-spacing: -0.01em; margin-bottom: 8px; }
+  .card p { font-size: 14.5px; color: var(--muted); line-height: 1.65; }
+  .card p code { font-size: 13px; color: var(--accent-soft); background: rgba(94,234,212,0.08); padding: 1px 5px; border-radius: 5px; }
+
+  /* STEPS */
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 52px; }
+  .step { background: var(--panel); border: 1px solid var(--border); border-radius: 15px; padding: 26px 24px; }
+  .step .num { font-family: var(--mono); font-size: 13px; color: var(--accent);
+    border: 1px solid rgba(45,212,191,0.3); background: rgba(45,212,191,0.07);
+    width: 34px; height: 34px; border-radius: 9px; display: flex; align-items: center; justify-content: center;
+    margin-bottom: 16px; font-weight: 600; }
+  .step h3 { font-size: 16.5px; font-weight: 650; margin-bottom: 8px; }
+  .step p { font-size: 14.5px; color: var(--muted); line-height: 1.65; margin-bottom: 14px; }
+  .snippet { background: #0a0d14; border: 1px solid var(--border); border-radius: 9px;
+    padding: 14px 16px; font-family: var(--mono); font-size: 12px; line-height: 1.7;
+    color: var(--muted); overflow-x: auto; }
+
+  /* CONTRACT / TABLE */
+  .codes { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 52px; align-items: start; }
+  table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--border); border-radius: 15px; overflow: hidden; }
+  th { text-align: left; font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--faint); padding: 14px 20px; border-bottom: 1px solid var(--border); }
+  td { padding: 14px 20px; font-size: 14.5px; border-bottom: 1px solid rgba(148,163,184,0.06); }
+  tr:last-child td { border-bottom: none; }
+  .rc { font-family: var(--mono); font-weight: 700; font-size: 15px; width: 60px; }
+  .rc0 { color: var(--green); } .rc1 { color: var(--accent-soft); } .rc2 { color: var(--red); } .rc3 { color: var(--muted); }
+  .desc { color: var(--muted); }
+  .callout { background: linear-gradient(135deg, rgba(13,148,136,0.10), rgba(45,212,191,0.06));
+    border: 1px solid rgba(13,148,136,0.28); border-radius: 15px; padding: 28px 26px; }
+  .callout h3 { font-size: 17px; font-weight: 650; margin-bottom: 12px; color: var(--accent); }
+  .callout p { font-size: 14.5px; color: var(--muted); line-height: 1.7; margin-bottom: 10px; }
+  .callout p:last-child { margin-bottom: 0; }
+  .callout code { font-size: 13px; color: var(--accent-soft); background: rgba(94,234,212,0.08); padding: 1px 5px; border-radius: 5px; }
+
+  .info-box { margin-top: 40px; background: var(--panel); border: 1px solid var(--border); border-radius: 15px;
+    padding: 28px 26px; display: flex; gap: 20px; align-items: flex-start; }
+  .info-box .ico { flex-shrink: 0; width: 44px; height: 44px; border-radius: 10px;
+    background: rgba(74,222,128,0.1); border: 1px solid rgba(74,222,128,0.25);
+    display: flex; align-items: center; justify-content: center; }
+  .info-box .ico svg { width: 22px; height: 22px; stroke: var(--green); fill: none; stroke-width: 1.8; }
+  .info-box h3 { font-size: 16px; font-weight: 650; margin-bottom: 6px; color: var(--green); }
+  .info-box p { font-size: 14.5px; color: var(--muted); line-height: 1.65; }
+  .info-box code { font-size: 13px; color: var(--green); background: rgba(74,222,128,0.08); padding: 1px 5px; border-radius: 5px; }
+
+  /* COMPARISON TABLE */
+  .compare-wrap { margin-top: 52px; overflow-x: auto; }
+  .compare { min-width: 680px; }
+  .compare th, .compare td { text-align: center; }
+  .compare th:first-child, .compare td:first-child { text-align: left; }
+  .compare .highlight { color: var(--accent); font-weight: 700; }
+  .compare .yes { color: var(--green); }
+  .compare .no { color: var(--faint); }
+
+  /* INSTALL */
+  .installs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 52px; }
+  .inst { background: var(--panel); border: 1px solid var(--border); border-radius: 15px; padding: 26px 24px; min-width: 0; }
+  .inst h3 { font-size: 16.5px; font-weight: 650; margin-bottom: 6px; }
+  .inst .hint { font-size: 13px; color: var(--faint); margin-bottom: 16px; font-family: var(--mono); }
+
+  /* FOOTER */
+  footer { border-top: 1px solid rgba(148,163,184,0.08); padding: 40px 0; position: relative; z-index: 1; }
+  .foot { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 20px; }
+  .foot .meta { font-size: 13px; color: var(--faint); margin-top: 8px; }
+  .foot nav { display: flex; gap: 24px; font-size: 14px; color: var(--muted); }
+  .foot nav a:hover { color: var(--text); }
+
+  .reveal { opacity: 0; transform: translateY(18px); transition: opacity 0.6s ease, transform 0.6s ease; }
+  .reveal.in { opacity: 1; transform: translateY(0); }
+
+  @media (max-width: 860px) {
+    .hero { grid-template-columns: 1fr; gap: 40px; }
+    .features, .steps, .installs { grid-template-columns: 1fr; }
+    .codes { grid-template-columns: 1fr; }
+    nav.links { display: none; }
+  }
+  @media (max-width: 560px) {
+    .hero .cmd-wrap .cmd { white-space: normal; overflow: visible; text-overflow: clip; word-break: break-all; }
+  }
+</style>
+</head>
+<body>
+
+<div class="glow"></div>
+<div class="grid-bg"></div>
+
+<!-- ============ NAV ============ -->
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a href="#top" class="brand">
+      <span class="logo-mark">错</span>
+      智能错题本
+      <span class="chip">v1.9.1 · MIT</span>
+    </a>
+    <nav class="links">
+      <a href="#features">特性</a>
+      <a href="#how">使用流程</a>
+      <a href="#contract">契约</a>
+      <a href="#install">安装</a>
+    </nav>
+    <a href="https://github.com/AmberjackQQ/wrong-notebook" class="btn btn-ghost" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+</header>
+
+<main id="top">
+<!-- ============ HERO ============ -->
+<section class="hero">
+  <div class="wrap" style="padding:0">
+    <span class="eyebrow"><span class="dot"></span> MIT · 默认本地运行</span>
+    <h1>错题不重犯，<br><span class="grad">AI 帮你吃透。</span></h1>
+    <p class="lede">
+      <strong>智能错题本</strong> 用 AI 把错题变成复习资产：自动识别题目、生成解析与知识点标签，并产出同类练习题。
+      支持 <strong>Gemini / OpenAI / Azure</strong> 3 家 AI 提供商，多错题本管理、一键导出打印，数据默认存本地 SQLite。
+    </p>
+    <div class="cta-row">
+      <a href="#install" class="btn btn-primary">立即安装</a>
+      <a href="https://github.com/AmberjackQQ/wrong-notebook" class="btn btn-ghost" target="_blank" rel="noopener">★ Star on GitHub</a>
+    </div>
+    <div class="cmd-bar">
+      <span class="prompt">$</span>
+      <span class="cmd-wrap"><span class="cmd">docker compose up -d</span></span>
+      <button class="copy" data-copy="docker compose up -d">copy</button>
+    </div>
+    <div class="badges">
+      <span class="badge">Next.js 16</span>
+      <span class="badge">React 19</span>
+      <span class="badge">Prisma + SQLite</span>
+      <span class="badge">Tailwind v4</span>
+      <span class="badge">Gemini · OpenAI · Azure</span>
+      <span class="badge">PWA</span>
+    </div>
+  </div>
+
+  <!-- 终端演示 -->
+  <div class="terminal">
+    <div class="term-bar">
+      <i></i><i></i><i></i>
+      <span class="term-title">wrong-notebook — 首次启动</span>
+    </div>
+    <div class="term-body">
+<span class="line"><span class="t-prompt">$</span> <span class="t-cmd">docker run -d --name wrong-notebook -p 3000:3000 ghcr.io/wttwins/wrong-notebook</span></span>
+<span class="line"><span class="t-out">  ✓ Pulling image layers...</span></span>
+<span class="line"><span class="t-ok">✓ Container started: wrong-notebook</span></span>
+<span class="t-gap"></span>
+<span class="line"><span class="t-prompt">$</span> <span class="t-cmd">npx prisma migrate dev</span></span>
+<span class="line"><span class="t-ok">✓ Database migrated</span></span>
+<span class="t-gap"></span>
+<span class="line"><span class="t-prompt">$</span> <span class="t-cmd">npx prisma db seed</span></span>
+<span class="line"><span class="t-ok">✓ Admin created: admin@localhost</span></span>
+<span class="t-gap"></span>
+<span class="line"><span class="t-prompt">$</span> <span class="t-cmd">npm run dev</span></span>
+<span class="line"><span class="t-hdr">▲ Next.js 16 ready in 1.2s</span></span>
+<span class="line"><span class="t-out">  ✓ Local: http://localhost:3000</span></span>
+<span class="t-gap"></span>
+<span class="line"><span class="t-prompt">$</span> <span class="t-note">echo $?</span></span>
+<span class="line"><span class="t-ok">0</span></span>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FEATURES ============ -->
+<section id="features">
+  <div class="wrap">
+    <p class="label reveal">Why Smart Wrong Notebook</p>
+    <h2 class="reveal">错题不是负担，<br>是下一步复习的入口。</h2>
+    <p class="sub reveal">从拍照上传到同类题练习，一条 AI 流水线替你完成整理、标注和出题。</p>
+
+    <div class="features">
+      <div class="card reveal">
+        <div class="ico">
+          <svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        </div>
+        <h3>错题自动吃透</h3>
+        <p>上传题目，AI 自动识别内容并生成解析、知识点标签和同类练习题，弱项当场定位。</p>
+      </div>
+      <div class="card reveal">
+        <div class="ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 10v6m11-11h-6M7 12H1"/></svg></div>
+        <h3>3 家 AI 自由切换</h3>
+        <p>Gemini、OpenAI、Azure 网页内动态配置，兼容 OpenAI 格式的第三方服务（硅基流动、GLM、Kimi 等），无需重启。</p>
+      </div>
+      <div class="card reveal">
+        <div class="ico"><svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div>
+        <h3>按科目分本管理</h3>
+        <p>数学、物理、英语等错题本独立管理，自动提取标签，自定义标签体系自由维护。</p>
+      </div>
+      <div class="card reveal">
+        <div class="ico"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg></div>
+        <h3>筛得准，印得全</h3>
+        <p>按掌握状态、时间、标签、年级学期、试卷等级多维度筛选，一键导出打印或存 PDF，内容与图片缩放自定义。</p>
+      </div>
+      <div class="card reveal">
+        <div class="ico"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+        <h3>智能练习补薄弱</h3>
+        <p>基于错题生成相似练习题，把反复出错的环节变成定向巩固。</p>
+      </div>
+      <div class="card reveal">
+        <div class="ico"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
+        <h3>数据隔离，权限分级</h3>
+        <p>多用户注册登录、数据安全隔离；管理员后台可启用/禁用违规用户，统计可视化掌握学习进度。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ HOW IT WORKS ============ -->
+<section id="how">
+  <div class="wrap">
+    <p class="label reveal">How it works</p>
+    <h2 class="reveal">三分钟启动，五分钟开始分析。</h2>
+
+    <div class="steps">
+      <div class="step reveal">
+        <div class="num">01</div>
+        <h3>启动服务</h3>
+        <p>Docker 一条命令拉起，或本地源码运行；默认管理员 <code>admin@localhost</code> 登录。</p>
+        <div class="snippet"><span class="t-prompt">$</span> <span class="t-cmd">docker compose up -d</span>
+<span class="t-out">✓ Started wrong-notebook on port 3000</span></div>
+      </div>
+      <div class="step reveal">
+        <div class="num">02</div>
+        <h3>配置 AI 提供商</h3>
+        <p>首页右上角设置，选 Gemini / OpenAI / Azure 并填 Key，保存即刻生效，无需重启。</p>
+        <div class="snippet"><span class="t-prompt">$</span> <span class="t-cmd">cat config/app-config.json</span>
+<span class="t-out">{ "provider": "gemini", "model": "gemini-2.5-flash" }</span></div>
+      </div>
+      <div class="step reveal">
+        <div class="num">03</div>
+        <h3>上传错题，开始复习</h3>
+        <p>拍照或上传错题，AI 生成解析、知识点标签和同类练习题，随后筛选、导出、打印。</p>
+        <div class="snippet"><span class="t-cmd">✓ 解析生成 · 3 条知识点标签</span>
+<span class="t-ok">✓ 生成 2 道同类练习题</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ CONTRACT ============ -->
+<section id="contract">
+  <div class="wrap">
+    <p class="label reveal">The contract</p>
+    <h2 class="reveal">默认行为说清楚，<br>不搞意外。</h2>
+    <p class="sub reveal">数据存哪、配置听谁的、权限怎么分——部署前先对齐这些默认行为。</p>
+
+    <div class="codes">
+      <table class="reveal">
+        <thead><tr><th>默认行为</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td class="rc rc0">本地存储</td><td class="desc">数据写入 SQLite 文件 <code>dev.db</code>，默认不出本机</td></tr>
+          <tr><td class="rc rc1">配置优先</td><td class="desc">网页设置存 <code>config/app-config.json</code>，优先级高于 <code>.env</code></td></tr>
+          <tr><td class="rc rc2">数据隔离</td><td class="desc">多用户数据相互隔离，管理员可禁用/启用账号</td></tr>
+          <tr><td class="rc rc3">HTTPS 要求</td><td class="desc">截图导出功能依赖安全上下文，见 <code>doc/HTTPS_SETUP.md</code></td></tr>
+        </tbody>
+      </table>
+      <div class="callout reveal">
+        <h3>数据不出本机</h3>
+        <p>默认 SQLite 本地文件存储，网页配置落本地文件；需要联网的只有 AI 请求本身。</p>
+        <p>需要远程访问时，按 <code>HTTPS_SETUP.md</code> 启用内置 HTTPS，或经 Docker 挂载 <code>./data</code> 与 <code>./config</code> 持久化。</p>
+      </div>
+    </div>
+
+    <div class="info-box reveal">
+      <div class="ico"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
+      <div>
+        <h3>多用户权限分级</h3>
+        <p>注册登录即可使用，数据按用户隔离；管理员后台可禁用违规用户、删除违规账号，适合班级或家庭多成员共用一套部署。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ COMPARISON ============ -->
+<section id="compare">
+  <div class="wrap">
+    <p class="label reveal">Comparison</p>
+    <h2 class="reveal">和纸质错题本、通用笔记比，<br>差在哪。</h2>
+    <p class="sub reveal">整理、标注、出题、复盘，一个流程里闭环。</p>
+
+    <div class="compare-wrap">
+      <table class="compare reveal">
+        <thead>
+          <tr><th>能力</th><th>纸质错题本</th><th>通用笔记工具</th><th class="highlight">智能错题本</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>AI 自动解析与知识点标签</td><td class="no">无</td><td class="no">无</td><td class="highlight yes">有</td></tr>
+          <tr><td>同类练习题生成</td><td class="no">无</td><td class="no">无</td><td class="highlight yes">有</td></tr>
+          <tr><td>多维度筛选</td><td class="no">手动翻找</td><td class="no">部分</td><td class="highlight yes">掌握/时间/标签/学期/卷级</td></tr>
+          <tr><td>自定义导出打印</td><td class="yes">直接复印</td><td class="no">部分</td><td class="highlight yes">内容与缩放可定制</td></tr>
+          <tr><td>学习统计可视化</td><td class="no">无</td><td class="no">部分</td><td class="highlight yes">掌握情况与进度</td></tr>
+          <tr><td>多用户与数据隔离</td><td class="no">无</td><td class="no">无</td><td class="highlight yes">有</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ============ INSTALL ============ -->
+<section id="install">
+  <div class="wrap">
+    <p class="label reveal">Install</p>
+    <h2 class="reveal">选你顺手的方式。</h2>
+    <p class="sub reveal">Docker、Docker Compose、本地源码，三种方式任选。</p>
+
+    <div class="installs">
+      <div class="inst reveal">
+        <h3>方式一 · Docker</h3>
+        <p class="hint">Docker ≥ 20.10 · 快速测试</p>
+        <div class="cmd-bar" style="margin-top:0;max-width:none">
+          <span class="prompt">$</span>
+          <span class="cmd-wrap"><span class="cmd">docker run -d --name wrong-notebook -e NEXTAUTH_SECRET="your_secret_key" -p 3000:3000 -v $(pwd)/data:/app/data -v $(pwd)/config:/app/config ghcr.io/wttwins/wrong-notebook</span></span>
+          <button class="copy" data-copy='docker run -d --name wrong-notebook -e NEXTAUTH_SECRET="your_secret_key" -p 3000:3000 -v $(pwd)/data:/app/data -v $(pwd)/config:/app/config ghcr.io/wttwins/wrong-notebook'>copy</button>
+        </div>
+      </div>
+      <div class="inst reveal">
+        <h3>方式二 · Docker Compose</h3>
+        <p class="hint">长期运行 · 推荐</p>
+        <div class="cmd-bar" style="margin-top:0;max-width:none">
+          <span class="prompt">$</span>
+          <span class="cmd-wrap"><span class="cmd">curl -o docker-compose.yml https://raw.githubusercontent.com/wttwins/wrong-notebook/refs/heads/main/docker-compose.yml && docker compose up -d</span></span>
+          <button class="copy" data-copy="curl -o docker-compose.yml https://raw.githubusercontent.com/wttwins/wrong-notebook/refs/heads/main/docker-compose.yml && docker compose up -d">copy</button>
+        </div>
+      </div>
+      <div class="inst reveal">
+        <h3>方式三 · 本地源码</h3>
+        <p class="hint">Node.js 18+ · 开发调试</p>
+        <div class="cmd-bar" style="margin-top:0;max-width:none">
+          <span class="prompt">$</span>
+          <span class="cmd-wrap"><span class="cmd">git clone https://github.com/AmberjackQQ/wrong-notebook.git && cd wrong-notebook && npm install && cp .env.example .env && npx prisma migrate dev && npx prisma db seed && npm run dev</span></span>
+          <button class="copy" data-copy="git clone https://github.com/AmberjackQQ/wrong-notebook.git && cd wrong-notebook && npm install && cp .env.example .env && npx prisma migrate dev && npx prisma db seed && npm run dev">copy</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+
+<!-- ============ FOOTER ============ -->
+<footer>
+  <div class="wrap foot">
+    <div>
+      <a href="https://github.com/AmberjackQQ/wrong-notebook" class="brand">
+        <span class="logo-mark">错</span> 智能错题本
+      </a>
+      <p class="meta">MIT © 2026 智能错题本 · 基于 AI 的错题管理系统</p>
+    </div>
+    <nav>
+      <a href="https://github.com/AmberjackQQ/wrong-notebook" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/AmberjackQQ/wrong-notebook/blob/main/README.md" target="_blank" rel="noopener">README</a>
+      <a href="https://github.com/AmberjackQQ/wrong-notebook/issues" target="_blank" rel="noopener">Issues</a>
+    </nav>
+  </div>
+</footer>
+
+<script>
+  document.querySelectorAll(".copy[data-copy]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      navigator.clipboard.writeText(btn.getAttribute("data-copy")).then(function () {
+        var old = btn.textContent;
+        btn.textContent = "copied ✓";
+        btn.classList.add("ok");
+        setTimeout(function () { btn.textContent = old; btn.classList.remove("ok"); }, 1600);
+      });
+    });
+  });
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) {
+      if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); }
+    });
+  }, { threshold: 0.12 });
+  document.querySelectorAll(".reveal").forEach(function (el) { io.observe(el); });
+</script>
+
+
+</body>
+</html>
