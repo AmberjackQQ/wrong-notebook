@@ -185,6 +185,8 @@ function PrintPreviewContent() {
             const imgs = Array.from(document.querySelectorAll<HTMLImageElement>(".max-w-4xl img"));
             await Promise.all(imgs.map(waitImage));
             await new Promise((resolve) => requestAnimationFrame(resolve));
+            // 等字体加载完再测量，否则文本高度不稳定导致分页数漂移
+            await document.fonts.ready;
             if (cancelled) return;
             const chunks = Array.from(document.querySelectorAll<HTMLElement>("[data-print-chunk]"));
             if (chunks.length === 0) {
@@ -197,6 +199,46 @@ function PrintPreviewContent() {
             document.body.appendChild(host);
             const result: Record<string, { pages: number; height: number }> = {};
             const fixes: Record<string, { type: "shrink"; avail: number } | { type: "push" }> = {};
+            // 克隆在 screen 媒体下测量，打印专属规则（img max-width:200%、print:hidden、
+            // break-inside-avoid…）不会生效，页数会与真实打印不符。把全局样式表里
+            // @media print 内的规则镜像进测量容器（scoped 到 #__mcol）以按打印布局分列
+            const collectPrintCss = (rules: CSSRuleList, out: string[]) => {
+                for (const rule of Array.from(rules)) {
+                    if (rule instanceof CSSMediaRule) {
+                        if (rule.conditionText === "print") flattenPrintRules(rule.cssRules, out);
+                    } else if (rule instanceof CSSSupportsRule || rule instanceof CSSLayerBlockRule) {
+                        collectPrintCss(rule.cssRules, out);
+                    }
+                }
+            };
+            const flattenPrintRules = (rules: CSSRuleList, out: string[]) => {
+                for (const rule of Array.from(rules)) {
+                    if (rule instanceof CSSStyleRule) {
+                        // 逐个选择器加前缀，逗号列表不能整体前缀（会漏作用域）
+                        const scoped = rule.selectorText
+                            .split(",")
+                            .map((sel) => `#__mcol ${sel.trim()}`)
+                            .join(",");
+                        out.push(`${scoped}{${rule.style.cssText}}`);
+                    } else if (
+                        rule instanceof CSSMediaRule ||
+                        rule instanceof CSSSupportsRule ||
+                        rule instanceof CSSLayerBlockRule
+                    ) {
+                        flattenPrintRules(rule.cssRules, out);
+                    }
+                }
+            };
+            const printCss: string[] = [];
+            for (const sheet of Array.from(document.styleSheets)) {
+                try {
+                    collectPrintCss(sheet.cssRules, printCss);
+                } catch {
+                    // 跨域样式表读不到 cssRules，跳过
+                }
+            }
+            const mirrorStyle = document.createElement("style");
+            mirrorStyle.textContent = printCss.join("");
             try {
                 for (const chunk of chunks) {
                     const key = chunk.getAttribute("data-print-chunk");
@@ -209,53 +251,80 @@ function PrintPreviewContent() {
                     });
                     host.appendChild(clone);
                     await Promise.all(Array.from(clone.querySelectorAll("img")).map(waitImage));
+                    // 克隆自带上一轮渲染写入的 --print-min-h（inline），镜像的 min-height 规则
+                    // 会拿旧值把测量撑大造成自反馈；剥掉后 var 落到 fallback auto = 自然测量
+                    clone.style.removeProperty("--print-min-h");
+                    // 镜像样式挂在克隆自身：随后读连续流高度时打印规则已生效
+                    //（选择器前缀 #__mcol 需要，克隆根即 #__mcol）
+                    clone.id = "__mcol";
+                    clone.appendChild(mirrorStyle);
+                    // 连续流高度（必须在放进多列容器前读取；多列内 offsetHeight 只是首个分片）
                     const height = clone.offsetHeight;
                     let pages = estimatePageCount(height);
 
-                    // 解析段防孤行：按不可拆分单元（标题/图片容器）模拟打印分页，
-                    // 若“解析：”标题与第一张解析图被分到不同页，则缩小首图塞进标题所在页
-                    //（剩余空间太小缩图不可读时，改为整段另起一页）
+                    // 连续流单元坐标（防孤行决策用）
+                    const flowUnits = Array.from(
+                        clone.querySelectorAll<HTMLElement>("[data-frag]")
+                    ).map((el) => ({
+                        kind: el.getAttribute("data-frag") || "",
+                        idx: Number(el.getAttribute("data-frag-index") || "0"),
+                        top: el.offsetTop,
+                        height: el.offsetHeight,
+                    }));
+
+                    // 多列真实分页测量：用 CSS 多列容器让浏览器按真实 break 规则
+                    // （break-inside-avoid、不可拆分图片、标题避尾…）分列，列数=打印页数。
+                    // 纯高度÷页高会把「单元被整体推到下页」造成的页尾留白漏掉而低估页数
+                    //（末页缺页码、偶数页补位判断失效），故与高度估算取较大者
+                    const MEAS_H = PRINT_PAGE_CONTENT_HEIGHT_PX - 1; // 打印页可用高 297mm≈1122.5px，留 1px 余量防边界溢出误判
+                    const COL_GAP = 40;
+                    const box = document.createElement("div");
+                    box.style.cssText = `width:${PRINT_PAGE_CONTENT_WIDTH_PX}px;height:${MEAS_H}px;column-width:${PRINT_PAGE_CONTENT_WIDTH_PX}px;column-gap:${COL_GAP}px;column-fill:auto;`;
+                    box.appendChild(clone);
+                    host.appendChild(box);
+
+                    const countColumns = () => Math.round(box.scrollWidth / (PRINT_PAGE_CONTENT_WIDTH_PX + COL_GAP));
+                    const colOf = (el: Element) =>
+                        Math.round((el.getBoundingClientRect().left - box.getBoundingClientRect().left) / (PRINT_PAGE_CONTENT_WIDTH_PX + COL_GAP));
+
+                    let mcPages = countColumns();
+                    // 超页高的不可拆分大图：打印时会裂成 ceil(h/页高) 页，多列布局只算 1 列 → 补差
+                    clone.querySelectorAll("img").forEach((img) => {
+                        if (img.offsetHeight > PRINT_PAGE_CONTENT_HEIGHT_PX) {
+                            mcPages += Math.floor(img.offsetHeight / PRINT_PAGE_CONTENT_HEIGHT_PX);
+                        }
+                    });
+                    pages = Math.max(pages, mcPages);
+
+                    // 解析段防孤行：若“解析：”标题与第一张解析图被分到不同页，
+                    // 则缩小首图塞进标题所在页（剩余空间太小缩图不可读时，
+                    // 改为整段另起一页）。判定用连续流坐标；修复后的页数
+                    // 把修复直接应用到多列克隆上重测得到（与真实打印同构）
                     if (key.endsWith(":answer")) {
-                        const PAGE_H = PRINT_PAGE_CONTENT_HEIGHT_PX;
-                        const units = Array.from(clone.querySelectorAll<HTMLElement>("[data-frag]")).map((el) => ({
-                            kind: el.getAttribute("data-frag") || "",
-                            idx: Number(el.getAttribute("data-frag-index") || "0"),
-                            top: el.offsetTop,
-                            height: el.offsetHeight,
-                        }));
-                        const simulate = (list: typeof units, mode: { type: "none" } | { type: "shrink"; avail: number } | { type: "push" }) => {
-                            let y = 0;
-                            const placed: { kind: string; idx: number; top: number; height: number; page: number }[] = [];
-                            for (const u of list) {
-                                let top = Math.max(u.top, y);
-                                let h = u.height;
-                                if (mode.type === "push" && u.kind === "analysis-heading") {
-                                    top = (Math.floor(top / PAGE_H) + 1) * PAGE_H;
-                                } else if (mode.type === "shrink" && u.kind === "analysis-image" && u.idx === 0) {
-                                    h = mode.avail + 2; // 容器高 = 图片高 + 上下边框
-                                }
-                                const pageTop = Math.floor(top / PAGE_H) * PAGE_H;
-                                if (top + h > pageTop + PAGE_H) top = pageTop + PAGE_H;
-                                y = top + h;
-                                placed.push({ kind: u.kind, idx: u.idx, top, height: h, page: Math.floor(top / PAGE_H) });
-                            }
-                            return placed;
-                        };
-                        const pass1 = simulate(units, { type: "none" });
-                        const heading = pass1.find((p) => p.kind === "analysis-heading");
-                        const img0Placed = pass1.find((p) => p.kind === "analysis-image" && p.idx === 0);
-                        const img0Unit = units.find((u) => u.kind === "analysis-image" && u.idx === 0);
-                        if (heading && img0Placed && img0Unit && img0Placed.page > heading.page) {
-                            const pageBottom = (heading.page + 1) * PAGE_H;
-                            const imgTopIfFits = Math.max(img0Unit.top, heading.top + heading.height);
+                        const headingUnit = flowUnits.find((u) => u.kind === "analysis-heading");
+                        const img0Unit = flowUnits.find((u) => u.kind === "analysis-image" && u.idx === 0);
+                        const headingEl = clone.querySelector<HTMLElement>('[data-frag="analysis-heading"]');
+                        const img0El = clone.querySelector<HTMLElement>('[data-frag="analysis-image"][data-frag-index="0"]');
+                        if (headingUnit && img0Unit && headingEl && img0El && colOf(img0El) > colOf(headingEl)) {
+                            const pageBottom = (colOf(headingEl) + 1) * MEAS_H;
+                            const imgTopIfFits = Math.max(img0Unit.top, headingUnit.top + headingUnit.height);
                             const avail = pageBottom - imgTopIfFits - 10; // 余量：容器边框/取整误差
                             const fix = avail >= 140 ? ({ type: "shrink", avail } as const) : ({ type: "push" } as const);
-                            // 缩小首图后其后内容自然位置整体上移，修正后模拟得到修复布局的真实页数
-                            const delta = fix.type === "shrink" ? img0Unit.height - (fix.avail + 2) : 0;
-                            const units2 = units.map((u) => (u.top > img0Unit.top ? { ...u, top: u.top - delta } : u));
-                            const pass2 = simulate(units2, fix);
-                            const last = pass2[pass2.length - 1];
-                            pages = Math.max(1, Math.ceil((last ? last.top + last.height : height) / PAGE_H));
+                            if (fix.type === "shrink") {
+                                const img0Inner = img0El.querySelector("img");
+                                if (img0Inner) {
+                                    img0Inner.style.height = `${fix.avail}px`;
+                                    img0Inner.style.width = "auto";
+                                    img0Inner.style.maxWidth = "100%";
+                                    img0Inner.style.display = "block";
+                                    img0Inner.style.margin = "0 auto";
+                                }
+                            } else {
+                                // 镜像打印的 break-before-page：把解析段整体推到新一列/页
+                                const wrapper = headingEl.closest<HTMLElement>("div.mb-4");
+                                if (wrapper) wrapper.style.breakBefore = "column";
+                            }
+                            pages = Math.max(1, countColumns());
                             fixes[key.slice(0, -":answer".length)] = fix;
                         }
                     }
