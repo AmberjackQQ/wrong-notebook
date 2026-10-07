@@ -20,7 +20,8 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Settings, Trash2, Loader2, AlertTriangle, Save, Eye, EyeOff, Languages, User, Bot, Shield, RefreshCw, Plus, Zap, CheckCircle2, XCircle, Download, Upload, BarChart3 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Settings, Trash2, Loader2, AlertTriangle, Save, Eye, EyeOff, Languages, User, Bot, Shield, RefreshCw, Plus, Zap, CheckCircle2, XCircle, Download, Upload, BarChart3, Search } from "lucide-react";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -1240,6 +1241,32 @@ export function SettingsDialog() {
                                             )}
                                         </div>
                                     )}
+                                </div>
+
+                                {/* AI 助手技能 */}
+                                <div className="pt-4 border-t space-y-3">
+                                    <div className="space-y-1">
+                                        <Label className="text-base font-semibold">{t.settings?.ai?.skillsTitle || "AI 助手技能"}</Label>
+                                        <p className="text-xs text-muted-foreground">{t.settings?.ai?.skillsDesc || "首页 AI 助手可调用的技能"}</p>
+                                    </div>
+                                    <div className="flex items-start justify-between gap-4 border rounded-md p-3 bg-background">
+                                        <div className="space-y-1 min-w-0">
+                                            <Label className="flex items-center gap-2">
+                                                <Search className="h-4 w-4 shrink-0" />
+                                                {t.settings?.ai?.skillQueryErrorItems || "错题查询"}
+                                            </Label>
+                                            <p className="text-xs text-muted-foreground">
+                                                {t.settings?.ai?.skillQueryErrorItemsDesc || "允许助手按学科、题目来源、打印次数、掌握程度、关键词查询真实错题数据"}
+                                            </p>
+                                        </div>
+                                        <Switch
+                                            checked={config.chatAssistant?.skills?.queryErrorItems !== false}
+                                            onCheckedChange={(checked) => setConfig(prev => ({
+                                                ...prev,
+                                                chatAssistant: { skills: { ...prev.chatAssistant?.skills, queryErrorItems: checked } },
+                                            }))}
+                                        />
+                                    </div>
                                 </div>
                             </div>
                         )}

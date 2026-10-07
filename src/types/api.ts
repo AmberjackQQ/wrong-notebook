@@ -141,6 +141,11 @@ export interface AppConfig {
         similar?: string;
         knowledgeTags?: string;
     };
+    chatAssistant?: {
+        skills?: {
+            queryErrorItems?: boolean; // 错题查询技能（AI 助手 query_error_items 工具）
+        };
+    };
     timeouts?: {
         analyze?: number; // 毫秒
     };

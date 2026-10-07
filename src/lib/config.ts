@@ -46,6 +46,11 @@ export interface AppConfig {
         token?: string;
         model?: string;
     };
+    chatAssistant?: {
+        skills?: {
+            queryErrorItems?: boolean; // 错题查询技能（/api/chat 的 query_error_items 工具）
+        };
+    };
 }
 
 // 旧版 OpenAI 配置格式（用于迁移检测）
@@ -130,6 +135,11 @@ const DEFAULT_CONFIG: AppConfig = {
         token: process.env.PADDLE_OCR_TOKEN || '',
         model: 'PaddleOCR-VL-1.6',
     },
+    chatAssistant: {
+        skills: {
+            queryErrorItems: true,
+        },
+    },
 };
 
 export function getAppConfig(): AppConfig {
@@ -165,6 +175,12 @@ export function getAppConfig(): AppConfig {
                 prompts: { ...DEFAULT_CONFIG.prompts, ...userConfig.prompts },
                 timeouts: { ...DEFAULT_CONFIG.timeouts, ...userConfig.timeouts },
                 paddleOcr: { ...DEFAULT_CONFIG.paddleOcr, ...userConfig.paddleOcr },
+                chatAssistant: {
+                    skills: {
+                        ...DEFAULT_CONFIG.chatAssistant?.skills,
+                        ...userConfig.chatAssistant?.skills,
+                    },
+                },
             };
         } catch (error) {
             logger.error({ error }, 'Failed to read config file');
@@ -188,6 +204,12 @@ export function updateAppConfig(newConfig: Partial<AppConfig>) {
         prompts: { ...currentConfig.prompts, ...newConfig.prompts },
         timeouts: { ...currentConfig.timeouts, ...newConfig.timeouts },
         paddleOcr: { ...currentConfig.paddleOcr, ...newConfig.paddleOcr },
+        chatAssistant: {
+            skills: {
+                ...currentConfig.chatAssistant?.skills,
+                ...newConfig.chatAssistant?.skills,
+            },
+        },
     };
 
     try {

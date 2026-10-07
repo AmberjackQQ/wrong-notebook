@@ -411,6 +411,11 @@ export const translations = {
                 validationApiKeyRequired: "API Key is required",
                 validationBaseUrlRequired: "Base URL is required",
                 validationModelRequired: "Model name is required",
+                // AI assistant skills
+                skillsTitle: "AI Assistant Skills",
+                skillsDesc: "Skills callable by the home AI assistant (chat)",
+                skillQueryErrorItems: "Error Item Query",
+                skillQueryErrorItemsDesc: "Lets the assistant query real error-item data by subject, paper source, print count, mastery, or keyword",
                 // Azure OpenAI
                 azureEndpoint: "Azure Endpoint",
                 azureEndpointPlaceholder: "https://your-resource.openai.azure.com",
@@ -1082,6 +1087,11 @@ export const translations = {
                 validationApiKeyRequired: "API Key 不能为空",
                 validationBaseUrlRequired: "Base URL 不能为空",
                 validationModelRequired: "模型名称不能为空",
+                // AI 助手技能
+                skillsTitle: "AI 助手技能",
+                skillsDesc: "首页 AI 助手（聊天）可调用的技能",
+                skillQueryErrorItems: "错题查询",
+                skillQueryErrorItemsDesc: "允许助手按学科、题目来源、打印次数、掌握程度、关键词查询真实错题数据",
                 // Azure OpenAI
                 azureEndpoint: "Azure 端点",
                 azureEndpointPlaceholder: "https://your-resource.openai.azure.com",
