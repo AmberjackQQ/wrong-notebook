@@ -477,7 +477,7 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
                                 <ChevronDownIcon className="ml-2 h-4 w-4" />
                             </Button>
                         </PopoverTrigger>
-                        <PopoverContent className="w-[200px] p-0">
+                        <PopoverContent className="w-max min-w-[max(200px,var(--radix-popover-trigger-width))] max-w-[80vw] p-0">
                             <div className="max-h-[300px] overflow-y-auto p-1">
                                 <div className="px-2 py-1.5 text-sm font-semibold text-muted-foreground">
                                     预设选项
@@ -618,7 +618,14 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
                                         <div className="flex justify-between items-start">
                                             <Badge
                                                 variant={item.masteryLevel > 0 ? "default" : "secondary"}
-                                                className={item.masteryLevel > 0 ? "bg-green-600 hover:bg-green-700" : ""}
+                                                className={item.masteryLevel > 0 ? "bg-green-600 hover:bg-green-700" : "cursor-pointer hover:opacity-80 transition-opacity"}
+                                                title={item.masteryLevel > 0 ? undefined : "查看题目详情"}
+                                                onClick={(e) => {
+                                                    if (item.masteryLevel > 0) return;
+                                                    e.preventDefault();
+                                                    e.stopPropagation();
+                                                    router.push(`/questions/${item.id}`);
+                                                }}
                                             >
                                                 {item.masteryLevel > 0 ? (
                                                     <span className="flex items-center gap-1">
@@ -729,6 +736,11 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
                                             {item.questionNumber && (
                                                 <Badge variant="outline" className="text-xs bg-blue-50 border-blue-200 text-blue-700">
                                                     题号: {item.questionNumber}
+                                                </Badge>
+                                            )}
+                                            {typeof item.printCount === 'number' && (
+                                                <Badge variant="outline" className="text-xs bg-amber-50 border-amber-200 text-amber-700" title="已打印次数">
+                                                    打印:{item.printCount}
                                                 </Badge>
                                             )}
                                         </div>
