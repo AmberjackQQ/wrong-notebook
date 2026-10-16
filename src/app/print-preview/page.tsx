@@ -66,6 +66,12 @@ function PrintPreviewContent() {
     // 勾选后点击“打印 / 保存 PDF”时，把本次所选题目的打印次数各 +1
     const [incrementPrintCount, setIncrementPrintCount] = useState(false);
 
+    // 打印对话框的“另存为 PDF”默认文件名取自 document.title，
+    // 本页固定为“双面打印AI智能错题本”；离开页面由路由重新套用全局标题
+    useEffect(() => {
+        document.title = "双面打印AI智能错题本";
+    }, []);
+
     const [showAnswerTime, setShowAnswerTime] = useState(true);
     // 增强强度参数，界面滑杆实时调整（contrast 0~5，brightness 0~3，即 CSS filter 全范围）
     const [enhanceContrast, setEnhanceContrast] = useState(0.8);
@@ -296,7 +302,9 @@ function PrintPreviewContent() {
                     });
                     pages = Math.max(pages, mcPages);
 
-                    // 解析段防孤行：若“解析：”标题与第一张解析图被分到不同页，
+                    // 解析段防孤行：若“解析：”标题与第一张解析图被分到不同页
+                    // （且首图紧随标题，中间几乎没有正文——中间有大段文字时
+                    // 标题并未孤立，强推整段反而留下一页大面积空白），
                     // 则缩小首图塞进标题所在页（剩余空间太小缩图不可读时，
                     // 改为整段另起一页）。判定用连续流坐标；修复后的页数
                     // 把修复直接应用到多列克隆上重测得到（与真实打印同构）
@@ -305,7 +313,11 @@ function PrintPreviewContent() {
                         const img0Unit = flowUnits.find((u) => u.kind === "analysis-image" && u.idx === 0);
                         const headingEl = clone.querySelector<HTMLElement>('[data-frag="analysis-heading"]');
                         const img0El = clone.querySelector<HTMLElement>('[data-frag="analysis-image"][data-frag-index="0"]');
-                        if (headingUnit && img0Unit && headingEl && img0El && colOf(img0El) > colOf(headingEl)) {
+                        if (
+                            headingUnit && img0Unit && headingEl && img0El &&
+                            colOf(img0El) > colOf(headingEl) &&
+                            img0Unit.top - (headingUnit.top + headingUnit.height) < 100
+                        ) {
                             const pageBottom = (colOf(headingEl) + 1) * MEAS_H;
                             const imgTopIfFits = Math.max(img0Unit.top, headingUnit.top + headingUnit.height);
                             const avail = pageBottom - imgTopIfFits - 10; // 余量：容器边框/取整误差
@@ -813,8 +825,8 @@ function PrintPreviewContent() {
                                 style={chunkMinHeightVar(stemPages)}
                             >
                             {/* QR Code: 与题干同页（第1页），扫码定位本题（打印需要足够大便于手机扫描）；
-                                题目来源从第2页题目栏移到此处，与二维码同行显示在其后 */}
-                            {(showQRCodes || item.paperLevel) && (
+                                一行两列：左列二维码，右列两行文字（第一行题目来源，第二行题号，节省纸张空间） */}
+                            {(showQRCodes || item.paperLevel || showQuestionNumber) && (
                             <div className="mb-4 flex items-center">
                                 {showQRCodes && (
                                     <QRCodeDisplay
@@ -823,11 +835,18 @@ function PrintPreviewContent() {
                                         showLabel={false}
                                     />
                                 )}
-                                {item.paperLevel && (
-                                    <span className="text-sm text-muted-foreground ml-3">
-                                        {t.printPreview?.paperLevel || 'Paper Level'}: {item.paperLevel.toUpperCase()}
-                                    </span>
-                                )}
+                                <div className="ml-3 text-sm text-muted-foreground leading-6">
+                                    {item.paperLevel && (
+                                        <div>
+                                            {t.printPreview?.paperLevel || 'Paper Level'}: {item.paperLevel.toUpperCase()}
+                                        </div>
+                                    )}
+                                    {showQuestionNumber && (
+                                        <div>
+                                            题号：{item.questionNumber || questionNumber}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                             )}
 
@@ -874,13 +893,6 @@ function PrintPreviewContent() {
                                 return null;
                             })()}
 
-                            {/* Question Text（排在题目图片之后） */}
-                            {showQuestionText && item.questionText && (
-                                <div className="mb-4">
-                                    <MarkdownRenderer content={item.questionText} />
-                                </div>
-                            )}
-
                             {/* 页码脚标：题干块从第1页起 */}
                             {renderFooters(`${item.id}:stem`, 1, totalPages)}
                         </div>
@@ -905,11 +917,7 @@ function PrintPreviewContent() {
                                             {item.gradeSemester}
                                         </span>
                                     )}
-                                    {showQuestionNumber && (
-                                        <span className="text-sm text-muted-foreground">
-                                            题号：{item.questionNumber || questionNumber}
-                                        </span>
-                                    )}
+                                    {/* 题号已移至第1页题目来源行的下一行 */}
                                     {showTags && tags.length > 0 && (
                                         <>
                                             <span className="font-semibold">
