@@ -16,7 +16,7 @@ import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, CheckCircle, XCircle, RefreshCw, Trash2, Edit, Save, X, Box, Loader2, Plus, ChevronDown, Monitor, Printer, ScanText, Sparkles } from "lucide-react";
+import { ArrowLeft, CheckCircle, XCircle, RefreshCw, Trash2, Edit, Save, X, Box, Loader2, Plus, ChevronDown, Monitor, Printer, ScanText, Sparkles, Camera, PenLine } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import Link from "next/link";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -33,6 +33,7 @@ import { GeogebraDemo } from "@/components/geogebra-demo";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { RichTextEditorWithImage } from "@/components/rich-text-editor-with-image";
 import { QRCodeDisplay } from "@/components/qr-code-display";
+import { CameraCapture } from "@/components/camera-capture";
 
 interface KnowledgeTag {
     id: string;
@@ -101,6 +102,10 @@ export default function ErrorDetailPage() {
     const [loading, setLoading] = useState(true);
     const [isEditingNotes, setIsEditingNotes] = useState(false);
     const [notesInput, setNotesInput] = useState("");
+    // 笔记图片与错误解答原文同模式：以 markdown 图片行追加在 userNotes 文本末尾存储
+    const [notesImagesInput, setNotesImagesInput] = useState<{ id: string; dataUrl: string; name: string }[]>([]);
+    // 拍照入口来源：edit=编辑态待存列表，quick=查看态拍照后直接保存
+    const [cameraTarget, setCameraTarget] = useState<null | "edit" | "quick">(null);
     const [isImageViewerOpen, setIsImageViewerOpen] = useState(false);
     const [currentImageUrl, setCurrentImageUrl] = useState<string | null>(null);
     const [isEditingTags, setIsEditingTags] = useState(false);
@@ -1046,13 +1051,16 @@ export default function ErrorDetailPage() {
     };
 
     const startEditingNotes = () => {
-        setNotesInput(item?.userNotes || "");
+        const { text, images } = splitWrongAnswerImages(item?.userNotes || "");
+        setNotesInput(text);
+        setNotesImagesInput(images);
         setIsEditingNotes(true);
     };
 
     const cancelEditingNotes = () => {
         setIsEditingNotes(false);
         setNotesInput("");
+        setNotesImagesInput([]);
     };
 
     const startEditingTags = () => {
@@ -1630,15 +1638,34 @@ export default function ErrorDetailPage() {
     const saveNotes = async () => {
         if (!item) return;
 
+        const notesText = joinWrongAnswerText(notesInput, notesImagesInput);
         try {
-            await apiClient.patch(`/api/error-items/${item.id}/notes`, { userNotes: notesInput });
-            setItem({ ...item, userNotes: notesInput });
+            await apiClient.patch(`/api/error-items/${item.id}/notes`, { userNotes: notesText });
+            setItem({ ...item, userNotes: notesText });
             setIsEditingNotes(false);
             alert(t.common?.messages?.noteSaveSuccess || 'Notes saved successfully');
         } catch (error) {
             console.error(error);
             alert(t.common?.messages?.saveFailed || 'Save failed');
         }
+    };
+
+    // 拍照确认：编辑态加入待存图片列表（随「保存」持久化）；查看态直接追加保存到笔记
+    const handleCameraConfirm = (dataUrl: string) => {
+        const name = `拍照-${Date.now()}.jpg`;
+        if (cameraTarget === "edit") {
+            setNotesImagesInput((prev) => [...prev, { id: `note-photo-${Date.now()}`, dataUrl, name }]);
+        } else if (cameraTarget === "quick" && item) {
+            const imageLine = `![${name}](${dataUrl})`;
+            const nextNotes = [(item.userNotes || "").trimEnd(), imageLine].filter(Boolean).join("\n");
+            apiClient.patch(`/api/error-items/${item.id}/notes`, { userNotes: nextNotes })
+                .then(() => setItem({ ...item, userNotes: nextNotes }))
+                .catch((err) => {
+                    console.error("Failed to save captured note image:", err);
+                    alert(t.common?.messages?.saveFailed || 'Save failed');
+                });
+        }
+        setCameraTarget(null);
     };
 
     if (loading) return <div className="p-8 text-center">{t.common.loading}</div>;
@@ -1677,6 +1704,12 @@ export default function ErrorDetailPage() {
                     </div>
 
                     <div className="flex gap-2">
+                        <Link href="/upload">
+                            <Button variant="outline" size="sm">
+                                <PenLine className="mr-2 h-4 w-4" />
+                                录入主页面
+                            </Button>
+                        </Link>
                         <Link href={`/practice?id=${item.id}`}>
                             <Button variant="outline" size="sm">
                                 <RefreshCw className="mr-2 h-4 w-4" />
@@ -2205,14 +2238,25 @@ export default function ErrorDetailPage() {
                                 <div className="flex justify-between items-center">
                                     <CardTitle>{t.detail.yourNotes}</CardTitle>
                                     {!isEditingNotes && (
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={startEditingNotes}
-                                        >
-                                            <Edit className="h-4 w-4 mr-1" />
-                                            {t.detail.editNotes || "Edit"}
-                                        </Button>
+                                        <div className="flex gap-1">
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => setCameraTarget("quick")}
+                                                title="拍照添加到笔记"
+                                            >
+                                                <Camera className="h-4 w-4 mr-1" />
+                                                拍照
+                                            </Button>
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={startEditingNotes}
+                                            >
+                                                <Edit className="h-4 w-4 mr-1" />
+                                                {t.detail.editNotes || "Edit"}
+                                            </Button>
+                                        </div>
                                     )}
                                 </div>
                             </CardHeader>
@@ -2226,7 +2270,46 @@ export default function ErrorDetailPage() {
                                             rows={5}
                                             className="w-full"
                                         />
+                                        {notesImagesInput.length > 0 && (
+                                            <div className="space-y-2">
+                                                <div className="text-sm font-medium">已添加的图片：</div>
+                                                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                                    {notesImagesInput.map((img) => (
+                                                        <div key={img.id} className="relative border rounded-lg p-2 bg-card">
+                                                            <div className="relative overflow-hidden rounded">
+                                                                <img
+                                                                    src={img.dataUrl}
+                                                                    alt={img.name}
+                                                                    className="w-full h-32 object-cover"
+                                                                />
+                                                                <Button
+                                                                    size="sm"
+                                                                    variant="destructive"
+                                                                    className="absolute -top-2 -right-2 h-8 w-8 p-0 shadow-lg rounded-full bg-red-600 hover:bg-red-700 text-white border-2 border-white"
+                                                                    onClick={() =>
+                                                                        setNotesImagesInput((prev) => prev.filter((i) => i.id !== img.id))
+                                                                    }
+                                                                >
+                                                                    <X className="h-4 w-4" />
+                                                                </Button>
+                                                            </div>
+                                                            <div className="text-xs text-muted-foreground mt-1 truncate">
+                                                                {img.name}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
                                         <div className="flex gap-2">
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                onClick={() => setCameraTarget("edit")}
+                                            >
+                                                <Camera className="h-4 w-4 mr-1" />
+                                                拍照
+                                            </Button>
                                             <Button
                                                 size="sm"
                                                 onClick={saveNotes}
@@ -2245,14 +2328,37 @@ export default function ErrorDetailPage() {
                                         </div>
                                     </div>
                                 ) : (
-                                    <div className="whitespace-pre-wrap">
-                                        {item.userNotes ? (
-                                            <p className="text-foreground">{item.userNotes}</p>
-                                        ) : (
-                                            <p className="text-muted-foreground italic">
-                                                {t.detail.noNotes}
-                                            </p>
-                                        )}
+                                    <div className="space-y-3">
+                                        {(() => {
+                                            const { text, images } = splitWrongAnswerImages(item.userNotes || "");
+                                            return (
+                                                <>
+                                                    {text && <MarkdownRenderer content={text} />}
+                                                    {images.length > 0 && (
+                                                        <div className="grid grid-cols-2 gap-3">
+                                                            {images.map((img) => (
+                                                                <img
+                                                                    key={img.id}
+                                                                    src={img.dataUrl}
+                                                                    alt={img.name}
+                                                                    className="w-full rounded-lg border cursor-pointer hover:opacity-90 transition-opacity"
+                                                                    onClick={() => {
+                                                                        setCurrentImageUrl(img.dataUrl);
+                                                                        setIsImageViewerOpen(true);
+                                                                    }}
+                                                                    title="点击查看全图"
+                                                                />
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                    {!text && images.length === 0 && (
+                                                        <p className="text-muted-foreground italic">
+                                                            {t.detail.noNotes}
+                                                        </p>
+                                                    )}
+                                                </>
+                                            );
+                                        })()}
                                     </div>
                                 )}
                             </CardContent>
@@ -2649,6 +2755,14 @@ export default function ErrorDetailPage() {
                     </div>
                 </div>
             </div>
+
+            {/* 拍照弹窗（笔记图片） */}
+            {cameraTarget && (
+                <CameraCapture
+                    onConfirm={handleCameraConfirm}
+                    onCancel={() => setCameraTarget(null)}
+                />
+            )}
 
             {/* Image Viewer Modal */}
             {
