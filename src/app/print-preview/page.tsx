@@ -263,6 +263,9 @@ function PrintPreviewContent() {
                     // 镜像样式挂在克隆自身：随后读连续流高度时打印规则已生效
                     //（选择器前缀 #__mcol 需要，克隆根即 #__mcol）
                     clone.id = "__mcol";
+                    // 克隆根显式定位：flowUnits 的 offsetTop 以最近的定位祖先为基准，
+                    // 不定位会退化为相对测量宿主，被宿主内残留元素污染坐标
+                    clone.style.position = "relative";
                     clone.appendChild(mirrorStyle);
                     // 连续流高度（必须在放进多列容器前读取；多列内 offsetHeight 只是首个分片）
                     const height = clone.offsetHeight;
@@ -315,12 +318,17 @@ function PrintPreviewContent() {
                         const img0El = clone.querySelector<HTMLElement>('[data-frag="analysis-image"][data-frag-index="0"]');
                         if (
                             headingUnit && img0Unit && headingEl && img0El &&
-                            colOf(img0El) > colOf(headingEl) &&
+                            (colOf(img0El) > colOf(headingEl) || Math.floor(headingUnit.top / MEAS_H) < colOf(headingEl)) &&
                             img0Unit.top - (headingUnit.top + headingUnit.height) < 100
                         ) {
-                            const pageBottom = (colOf(headingEl) + 1) * MEAS_H;
+                            // 页底用标题的连续流坐标推算，而不是标题在多列克隆里的
+                            // 实际列位：全局打印样式 h3 { page-break-after: avoid }
+                            // 会把标题连同不可分割的首图一起拖到新列，拖后的列号
+                            // 不能代表标题的自然页；avail 封顶一页，缩放高度超过
+                            // 页高只会把图片拉成跨页巨图
+                            const pageBottom = (Math.floor(headingUnit.top / MEAS_H) + 1) * MEAS_H;
                             const imgTopIfFits = Math.max(img0Unit.top, headingUnit.top + headingUnit.height);
-                            const avail = pageBottom - imgTopIfFits - 10; // 余量：容器边框/取整误差
+                            const avail = Math.min(pageBottom - imgTopIfFits - 10, MEAS_H - 40); // 余量：容器边框/取整误差
                             const fix = avail >= 140 ? ({ type: "shrink", avail } as const) : ({ type: "push" } as const);
                             if (fix.type === "shrink") {
                                 const img0Inner = img0El.querySelector("img");
@@ -342,6 +350,9 @@ function PrintPreviewContent() {
                     }
                     result[key] = { pages, height };
                     clone.remove();
+                    // 多列容器一并移除：残留盒子（页高）会把后续克隆在宿主内
+                    // 越压越低，污染下一块的连续流坐标测量
+                    box.remove();
                 }
             } finally {
                 host.remove();
@@ -892,6 +903,13 @@ function PrintPreviewContent() {
                                 }
                                 return null;
                             })()}
+
+                            {/* Question Text（排在题目图片之后） */}
+                            {showQuestionText && item.questionText && (
+                                <div className="mb-4">
+                                    <MarkdownRenderer content={item.questionText} />
+                                </div>
+                            )}
 
                             {/* 页码脚标：题干块从第1页起 */}
                             {renderFooters(`${item.id}:stem`, 1, totalPages)}
