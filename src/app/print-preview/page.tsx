@@ -32,6 +32,62 @@ const styleTextOf = (style: CSSProperties) =>
         .map(([k, v]) => `${k.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`)}:${v}`)
         .join(";");
 
+// 题号内容排序，规则：
+// 1) "第xx页-数字" → 先按页码 xx 从小到大（xx 支持阿拉伯数字与中文数字，如 七、十一、二十三），
+//    同页按页内题号从小到大
+// 2) 纯数字 → 按数值从小到大
+// 3) 其他字母数字混合 → 按字符编码顺序
+// 类别间顺序：纯数字 < 其他混合 < 页码格式（与其首字符编码顺序一致）；无题号排最后
+const QN_PAGE_RE = /^第([\d一二两三四五六七八九十百零]+)页-(.+)$/;
+
+// 中文数字转数值（一~九百九十九，含 两/零）；无法解析返回 NaN
+const cnToNumber = (s: string): number => {
+    if (/^\d+$/.test(s)) return parseInt(s, 10);
+    const D: Record<string, number> = { 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
+    let total = 0;
+    let num = 0;
+    for (const ch of s) {
+        if (D[ch] !== undefined) num = D[ch];
+        else if (ch === "十") { total += (num || 1) * 10; num = 0; }
+        else if (ch === "百") { total += (num || 1) * 100; num = 0; }
+        else if (ch === "零") { num = 0; }
+        else return NaN;
+    }
+    return total + num;
+};
+
+const qnPageNumberOf = (s: string): number => {
+    const n = cnToNumber(s);
+    return Number.isNaN(n) ? Number.MAX_SAFE_INTEGER : n;
+};
+
+const qnCategory = (qn: string): 0 | 1 | 2 =>
+    /^\d+$/.test(qn) ? 0 : QN_PAGE_RE.test(qn) ? 2 : 1;
+
+const compareByQuestionNumber = (a: ErrorItem, b: ErrorItem): number => {
+    const qa = (a.questionNumber || "").trim();
+    const qb = (b.questionNumber || "").trim();
+    if (!qa && !qb) return 0;
+    if (!qa) return 1;
+    if (!qb) return -1;
+    const catDiff = qnCategory(qa) - qnCategory(qb);
+    if (catDiff) return catDiff;
+    if (qnCategory(qa) === 0) {
+        return parseInt(qa, 10) - parseInt(qb, 10);
+    }
+    if (qnCategory(qa) === 2) {
+        const pageDiff = qnPageNumberOf(qa.match(QN_PAGE_RE)![1]) - qnPageNumberOf(qb.match(QN_PAGE_RE)![1]);
+        if (pageDiff) return pageDiff;
+        const sa = qa.match(QN_PAGE_RE)![2].trim();
+        const sb = qb.match(QN_PAGE_RE)![2].trim();
+        if (/^\d+$/.test(sa) && /^\d+$/.test(sb)) {
+            return parseInt(sa, 10) - parseInt(sb, 10);
+        }
+        return sa < sb ? -1 : sa > sb ? 1 : 0;
+    }
+    return qa < qb ? -1 : qa > qb ? 1 : 0;
+};
+
 function PrintPreviewContent() {
     const searchParams = useSearchParams();
     const { t } = useLanguage();
@@ -51,6 +107,8 @@ function PrintPreviewContent() {
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [sortBy, setSortBy] = useState<string>("createdAt");
     const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+    // 排序模式：按题号内容（含"第x页-y"解析）或按添加时间（数据获取顺序）
+    const [sortMode, setSortMode] = useState<"questionNumber" | "createdAt">("questionNumber");
     const [showQuestionHeader, setShowQuestionHeader] = useState(true);
     const [showQuestionNumber, setShowQuestionNumber] = useState(true);
     const [isSelectionBoxCollapsed, setIsSelectionBoxCollapsed] = useState(false);
@@ -380,7 +438,10 @@ function PrintPreviewContent() {
         };
     }, [loading, items, selectedIds, showQuestionText, showQuestionImages, showAnswers, showAnalysis, showTags, showQRCodes, showQuestionHeader, showQuestionNumber, fitImagesToPage, imageScale, answerImageScale, analysisImageScale]);
 
-    const selectedItems = getSelectedPrintItems(items, selectedIds);
+    // 打印内容按所选排序模式展示：题号内容排序，或数据获取顺序（添加时间）
+    const selectedItems = sortMode === "questionNumber"
+        ? getSelectedPrintItems(items, selectedIds).sort(compareByQuestionNumber)
+        : getSelectedPrintItems(items, selectedIds);
     const reserveAnswerSpace = shouldReserveAnswerSpace(showAnswers, showAnalysis);
     const countLabel = getPrintPreviewCountLabel(items.length, selectedItems.length);
     const emptyState = getPrintPreviewEmptyState(items.length, selectedItems.length);
@@ -476,15 +537,34 @@ function PrintPreviewContent() {
                         </h1>
                         <div className="flex items-center gap-2">
                             <Button
-                                variant="outline"
+                                variant={sortMode === "questionNumber" ? "secondary" : "outline"}
                                 size="sm"
-                                onClick={toggleSortOrder}
-                                title={sortOrder === "desc" ? "切换为升序" : "切换为降序"}
+                                onClick={() => setSortMode("questionNumber")}
+                                title="按题号内容排序：第x页-y 先按页码（支持中文数字如十一）再按页内序号；纯数字按数值；其他按编码顺序"
                                 disabled={loading}
                             >
-                                <ArrowUpDown className="mr-2 h-4 w-4" />
-                                {sortOrder === "desc" ? "最新→最早" : "最早→最新"}
+                                按题号内容
                             </Button>
+                            <Button
+                                variant={sortMode === "createdAt" ? "secondary" : "outline"}
+                                size="sm"
+                                onClick={() => setSortMode("createdAt")}
+                                disabled={loading}
+                            >
+                                按添加时间
+                            </Button>
+                            {sortMode === "createdAt" && (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={toggleSortOrder}
+                                    title={sortOrder === "desc" ? "切换为升序" : "切换为降序"}
+                                    disabled={loading}
+                                >
+                                    <ArrowUpDown className="mr-2 h-4 w-4" />
+                                    {sortOrder === "desc" ? "最新→最早" : "最早→最新"}
+                                </Button>
+                            )}
                             <label
                                 className="flex items-center gap-1.5 text-xs sm:text-sm cursor-pointer whitespace-nowrap text-muted-foreground hover:text-foreground transition-colors"
                                 title="勾选后，点击“打印 / 保存 PDF”时本次所选题目的打印次数各加一"
@@ -753,7 +833,7 @@ function PrintPreviewContent() {
                         </div>
                         {!isSelectionBoxCollapsed && (
                             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 max-h-44 overflow-y-auto pr-1">
-                                {items.map((item, index) => (
+                                {(sortMode === "questionNumber" ? [...items].sort(compareByQuestionNumber) : items).map((item, index) => (
                                     <label
                                         key={item.id}
                                         className="flex items-start gap-2 rounded border bg-background p-2 text-xs cursor-pointer hover:border-primary/50"
@@ -765,7 +845,9 @@ function PrintPreviewContent() {
                                             className="mt-0.5 rounded border-gray-300 text-primary focus:ring-primary"
                                         />
                                         <span className="font-semibold">
-                                            {t.printPreview?.questionNumber?.replace('{num}', String(index + 1)) || `Question ${index + 1}`}
+                                            {item.questionNumber?.trim() ||
+                                                t.printPreview?.questionNumber?.replace('{num}', String(index + 1)) ||
+                                                `Question ${index + 1}`}
                                         </span>
                                         {typeof item.printCount === 'number' && (
                                             <span className="ml-auto text-muted-foreground whitespace-nowrap">
