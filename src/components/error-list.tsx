@@ -48,6 +48,9 @@ type KnowledgeFilterChange = {
 // LocalStorage keys for filter persistence
 const FILTER_STORAGE_KEY = 'errorListFilters';
 
+// 题目来源预设选项（来源搜索与筛选下拉共用）
+const PRESET_QUESTION_SOURCES = ["模拟考试", "期中考试", "期末考试"];
+
 // Filter state interface
 interface FilterState {
     masteryFilter: "all" | "mastered" | "unmastered";
@@ -153,7 +156,6 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
     const handleExportPrint = () => {
         const params = new URLSearchParams();
         if (subjectId) params.append("subjectId", subjectId);
-        if (search) params.append("query", search);
         if (masteryFilter !== "all") {
             params.append("mastery", masteryFilter === "mastered" ? "1" : "0");
         }
@@ -173,6 +175,28 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
         }
 
         router.push(`/print-preview?${params.toString()}`);
+    };
+
+    // 搜索题目来源：按输入匹配来源名（预设+自定义），把最符合的来源
+    // 设进题目来源筛选（列表过滤由 paperLevelFilter 驱动）；清空输入恢复全部
+    const handleSearchChange = (value: string) => {
+        setSearch(value);
+        const v = value.trim().toLowerCase();
+        if (!v) {
+            setPaperLevelFilter("all");
+            return;
+        }
+        const rank = (s: string) => {
+            const l = s.toLowerCase();
+            if (l === v) return 0;
+            if (l.startsWith(v)) return 1;
+            if (l.includes(v)) return 2;
+            return 3;
+        };
+        const best = [...PRESET_QUESTION_SOURCES, ...customQuestionSources]
+            .filter((s) => rank(s) < 3)
+            .sort((a, b) => rank(a) - rank(b) || a.length - b.length)[0];
+        if (best) setPaperLevelFilter(best);
     };
 
     const handleTagClick = (tag: string) => {
@@ -325,7 +349,6 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
     useEffect(() => {
         const prevFilters = prevFiltersRef.current;
         const filtersChanged =
-            prevFilters.search !== search ||
             prevFilters.masteryFilter !== masteryFilter ||
             prevFilters.timeFilter !== timeFilter ||
             prevFilters.selectedTags !== selectedTags ||
@@ -336,7 +359,7 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
             prevFilters.sortBy !== sortBy ||
             prevFilters.sortOrder !== sortOrder;
 
-        // 更新 ref
+        // 更新 ref（search 仅作输入框文本，不参与请求）
         prevFiltersRef.current = { search, masteryFilter, timeFilter, selectedTags, subjectId, gradeFilter, printCountFilter, paperLevelFilter, sortBy, sortOrder };
 
         if (filtersChanged && page !== 1) {
@@ -347,14 +370,13 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
 
         // 正常请求数据
         fetchItems();
-    }, [page, search, masteryFilter, timeFilter, selectedTags, subjectId, gradeFilter, printCountFilter, paperLevelFilter, sortBy, sortOrder]);
+    }, [page, masteryFilter, timeFilter, selectedTags, subjectId, gradeFilter, printCountFilter, paperLevelFilter, sortBy, sortOrder]);
 
     const fetchItems = async () => {
         setLoading(true);
         try {
             const params = new URLSearchParams();
             if (subjectId) params.append("subjectId", subjectId);
-            if (search) params.append("query", search);
             if (masteryFilter !== "all") {
                 params.append("mastery", masteryFilter === "mastered" ? "1" : "0");
             }
@@ -394,7 +416,7 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
                         placeholder={t.notebook.search}
                         className="pl-9"
                         value={search}
-                        onChange={(e) => setSearch(e.target.value)}
+                        onChange={(e) => handleSearchChange(e.target.value)}
                     />
                 </div>
                 <DropdownMenu>
@@ -493,7 +515,7 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
                                 >
                                     {t.filter.all || "全部"}
                                 </Button>
-                                {["模拟考试", "期中考试", "期末考试"].sort().map(source => (
+                                {[...PRESET_QUESTION_SOURCES].sort().map(source => (
                                     <Button
                                         key={source}
                                         variant="ghost"
