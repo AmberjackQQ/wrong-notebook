@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { ParsedQuestion } from "@/lib/ai";
 import { calculateGrade } from "@/lib/grade-calculator";
 import { Input } from "@/components/ui/input";
@@ -33,6 +33,27 @@ interface ParsedQuestionWithSubject extends ParsedQuestion {
     analysisImages?: string; // JSON string of analysis images
     answerTime?: string; // ISO string of when the answer was completed
 }
+
+// OCR 结果里的 <img src="data:image/...;base64,XXXX"> 体积巨大，会把编辑框撑爆：
+// 编辑框内把 base64 载荷折叠为 [图片N] 占位符显示，输入时还原成完整 data URL，
+// 保存与预览始终使用完整内容（展开只认 src="[图片N]" 形式，正文里的同名文字不受影响）
+const DATA_IMG_URL_RE = /data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=]+/gi;
+const FOLDED_IMG_SRC_RE = /src=(["'])\[图片(\d+)\]\1/g;
+
+const foldQuestionImages = (text: string, tokens: Map<number, string>): string => {
+    tokens.clear();
+    let i = 0;
+    return text.replace(DATA_IMG_URL_RE, (dataUrl) => {
+        tokens.set(++i, dataUrl);
+        return `[图片${i}]`;
+    });
+};
+
+const expandQuestionImages = (text: string, tokens: Map<number, string>): string =>
+    text.replace(FOLDED_IMG_SRC_RE, (m, quote: string, n: string) => {
+        const dataUrl = tokens.get(Number(n));
+        return dataUrl ? `src=${quote}${dataUrl}${quote}` : m;
+    });
 
 interface CorrectionEditorProps {
     initialData: ParsedQuestion;
@@ -77,6 +98,15 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
     const [tagsError, setTagsError] = useState<string | null>(null);
     const [newSourceName, setNewSourceName] = useState("");
     const [isAddingSource, setIsAddingSource] = useState(false);
+    // 题目内容编辑框的图片折叠：显示占位符版本，输入时还原
+    const imgTokensRef = useRef<Map<number, string>>(new Map());
+    const displayQuestionText = useMemo(
+        () => foldQuestionImages(data.questionText, imgTokensRef.current),
+        [data.questionText]
+    );
+    const handleQuestionTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+        setData({ ...data, questionText: expandQuestionImages(e.target.value, imgTokensRef.current) });
+    };
     const [sourcePopoverOpen, setSourcePopoverOpen] = useState(false);
     const [hasInitializedPaperLevel, setHasInitializedPaperLevel] = useState(false);
     const [hasInitializedGradeSemester, setHasInitializedGradeSemester] = useState(false);
@@ -586,11 +616,14 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
                     <div className="space-y-2">
                         <Label>{t.editor.question}</Label>
                         <Textarea
-                            value={data.questionText}
-                            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setData({ ...data, questionText: e.target.value })}
+                            value={displayQuestionText}
+                            onChange={handleQuestionTextChange}
                             className="min-h-[150px] font-mono text-sm"
                             placeholder={t.editor.placeholder || "Supports Markdown and LaTeX..."}
                         />
+                        <p className="text-xs text-muted-foreground">
+                            图片以 [图片N] 占位符折叠显示（请勿改动占位符），实际图片在右侧预览查看
+                        </p>
                         <Button
                             variant="default"
                             size="sm"
