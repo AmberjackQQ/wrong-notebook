@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { UploadCloud, Loader2, Monitor } from "lucide-react";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { getDisplayStreamWithRetry, screenshotErrorMessage } from "@/lib/screenshot";
 
 // 添加 CaptureController 类型声明
 declare global {
@@ -94,7 +95,7 @@ export function UploadZone({ onImageSelect, isAnalyzing, showClipboardHint = fal
                 (displayMediaOptions as any).controller = controller;
             }
 
-            const stream = await navigator.mediaDevices.getDisplayMedia(displayMediaOptions);
+            const stream = await getDisplayStreamWithRetry(displayMediaOptions);
 
             // 获取视频轨道并检查捕获类型
             const [videoTrack] = stream.getVideoTracks();
@@ -172,7 +173,7 @@ export function UploadZone({ onImageSelect, isAnalyzing, showClipboardHint = fal
                     console.log('用户取消了屏幕截图');
                 } else {
                     console.error('Screenshot failed:', error);
-                    alert(`${t.upload.screenshotFailed}: ${error.message}`);
+                    alert(screenshotErrorMessage(error));
                 }
             }
         } finally {

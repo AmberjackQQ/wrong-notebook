@@ -31,6 +31,7 @@ import { getMistakeStatusDisplayLabel, isKnownMistakeStatus, normalizeMistakeSta
 import { NotebookSelector } from "@/components/notebook-selector";
 import { GeogebraDemo } from "@/components/geogebra-demo";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { getDisplayStreamWithRetry, screenshotErrorMessage } from "@/lib/screenshot";
 import { RichTextEditorWithImage } from "@/components/rich-text-editor-with-image";
 import { QRCodeDisplay } from "@/components/qr-code-display";
 import { CameraCapture } from "@/components/camera-capture";
@@ -350,7 +351,7 @@ export default function ErrorDetailPage() {
                 (displayMediaOptions as any).controller = controller;
             }
 
-            const stream = await navigator.mediaDevices.getDisplayMedia(displayMediaOptions);
+            const stream = await getDisplayStreamWithRetry(displayMediaOptions);
 
             // 保存流以供后续使用
             setScreenshotStream(stream);
@@ -419,7 +420,7 @@ export default function ErrorDetailPage() {
                     console.log('用户取消了屏幕截图');
                 } else {
                     console.error('Screenshot failed:', error);
-                    alert(`屏幕截图失败: ${error.message}`);
+                    alert(screenshotErrorMessage(error));
                 }
             }
             setIsScreenshotting(false);
@@ -695,7 +696,7 @@ export default function ErrorDetailPage() {
                 (displayMediaOptions as any).controller = controller;
             }
 
-            const stream = await navigator.mediaDevices.getDisplayMedia(displayMediaOptions);
+            const stream = await getDisplayStreamWithRetry(displayMediaOptions);
 
             // 保存流以供后续使用
             setAnalysisScreenshotStream(stream);

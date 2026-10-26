@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { X, ImageIcon, Monitor } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
+import { getDisplayStreamWithRetry, screenshotErrorMessage } from "@/lib/screenshot";
 
 interface PastedImage {
   id: string;
@@ -146,7 +147,7 @@ export function RichTextEditorWithImage({
         (displayMediaOptions as any).controller = controller;
       }
 
-      const stream = await navigator.mediaDevices.getDisplayMedia(displayMediaOptions);
+      const stream = await getDisplayStreamWithRetry(displayMediaOptions);
 
       // 获取视频轨道并检查捕获类型
       const [videoTrack] = stream.getVideoTracks();
@@ -216,7 +217,7 @@ export function RichTextEditorWithImage({
         console.log('用户取消了屏幕截图');
       } else {
         console.error('❌ 屏幕截图失败:', error);
-        alert('屏幕截图失败，请确保允许屏幕共享权限');
+        alert(screenshotErrorMessage(error));
       }
       setIsScreenshotting(false);
     }
