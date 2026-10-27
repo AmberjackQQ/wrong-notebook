@@ -6,18 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { UploadCloud, Loader2, Monitor } from "lucide-react";
 import { useLanguage } from "@/contexts/LanguageContext";
-import { getDisplayStreamWithRetry, screenshotErrorMessage } from "@/lib/screenshot";
-
-// 添加 CaptureController 类型声明
-declare global {
-    interface Window {
-        CaptureController: {
-            new(): {
-                setFocusBehavior(behavior: 'no-focus-change' | 'focus-capturing-application'): void;
-            };
-        };
-    }
-}
+import { getDisplayStreamWithRetry, screenshotErrorMessage, createNoFocusCaptureController, tryRefocusWindow } from "@/lib/screenshot";
 
 interface UploadZoneProps {
     onImageSelect: (file: File) => void;  // 改为传递 File 对象
@@ -75,11 +64,8 @@ export function UploadZone({ onImageSelect, isAnalyzing, showClipboardHint = fal
         setIsScreenshotting(true);
 
         try {
-            // 创建 CaptureController 来控制焦点行为
-            let controller;
-            if ('CaptureController' in window) {
-                controller = new window.CaptureController();
-            }
+            // 创建 CaptureController 并预设不切换焦点（选完窗口浏览器保持前台）
+            const controller = createNoFocusCaptureController();
 
             // 请求屏幕共享权限，优先当前标签页
             const displayMediaOptions: DisplayMediaStreamOptions & {
@@ -96,21 +82,7 @@ export function UploadZone({ onImageSelect, isAnalyzing, showClipboardHint = fal
             }
 
             const stream = await getDisplayStreamWithRetry(displayMediaOptions);
-
-            // 获取视频轨道并检查捕获类型
-            const [videoTrack] = stream.getVideoTracks();
-            const settings = videoTrack.getSettings();
-            const displaySurface = (settings as any).displaySurface;  // 'browser' 表示标签页
-
-            // 如果是标签页或窗口，设置不切换焦点
-            if (controller && (displaySurface === 'browser' || displaySurface === 'window')) {
-                try {
-                    controller.setFocusBehavior('no-focus-change');  // 关键：不切换焦点到选中标签页
-                    console.log('✅ 已设置不切换焦点行为');
-                } catch (e) {
-                    console.warn('⚠️ 无法设置焦点行为:', e);
-                }
-            }
+            tryRefocusWindow();
 
             // 创建视频元素
             const video = document.createElement('video');

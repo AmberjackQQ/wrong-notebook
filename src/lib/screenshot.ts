@@ -3,6 +3,34 @@
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+interface CaptureControllerLike {
+    setFocusBehavior?: (behavior: "no-focus-change" | "focus-captured-surface") => void;
+}
+
+// 创建已预设「不切换焦点」的捕获控制器：选完窗口后浏览器保持前台，裁剪弹窗直接可见。
+// 焦点行为必须在 getDisplayMedia 之前设置（resolve 后会很快定型）；浏览器不支持时返回
+// undefined，调用方可用 tryRefocusWindow 兜底
+export function createNoFocusCaptureController(): CaptureControllerLike | undefined {
+    if (typeof window === "undefined" || !("CaptureController" in window)) return undefined;
+    try {
+        const controller = new (window as unknown as { CaptureController: { new(): CaptureControllerLike } }).CaptureController();
+        controller.setFocusBehavior?.("no-focus-change");
+        return controller;
+    } catch {
+        return undefined;
+    }
+}
+
+// 拿到截图流后若页面已失焦（浏览器不支持条件焦点时，选窗口会切走焦点），尝试拉回前台。
+// 脚本唤起前台常被浏览器限制，属尽力而为
+export function tryRefocusWindow(): void {
+    try {
+        if (!document.hasFocus()) window.focus();
+    } catch {
+        // 忽略
+    }
+}
+
 // 请求屏幕捕获；NotReadableError（捕获源启动失败，常为瞬时故障）时短暂等待重试一次。
 // 注意：CaptureController 只能配合一次 getDisplayMedia，重试时必须换新的（或去掉）
 export async function getDisplayStreamWithRetry(
@@ -15,8 +43,9 @@ export async function getDisplayStreamWithRetry(
             console.warn("屏幕捕获源启动失败，300ms 后自动重试一次");
             await sleep(300);
             const retryOptions: DisplayMediaStreamOptions & { controller?: unknown } = { ...options };
-            if (typeof window !== "undefined" && "CaptureController" in window) {
-                retryOptions.controller = new (window as unknown as { CaptureController: { new(): unknown } }).CaptureController();
+            const retryController = createNoFocusCaptureController();
+            if (retryController) {
+                retryOptions.controller = retryController;
             } else {
                 delete retryOptions.controller;
             }

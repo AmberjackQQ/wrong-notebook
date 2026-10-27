@@ -1,16 +1,5 @@
 "use client";
 
-// 添加 CaptureController 类型声明
-declare global {
-    interface Window {
-        CaptureController: {
-            new(): {
-                setFocusBehavior(behavior: 'no-focus-change' | 'focus-capturing-application'): void;
-            };
-        };
-    }
-}
-
 import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -31,7 +20,7 @@ import { getMistakeStatusDisplayLabel, isKnownMistakeStatus, normalizeMistakeSta
 import { NotebookSelector } from "@/components/notebook-selector";
 import { GeogebraDemo } from "@/components/geogebra-demo";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { getDisplayStreamWithRetry, screenshotErrorMessage } from "@/lib/screenshot";
+import { getDisplayStreamWithRetry, screenshotErrorMessage, createNoFocusCaptureController, tryRefocusWindow } from "@/lib/screenshot";
 import { RichTextEditorWithImage } from "@/components/rich-text-editor-with-image";
 import { QRCodeDisplay } from "@/components/qr-code-display";
 import { CameraCapture } from "@/components/camera-capture";
@@ -327,11 +316,8 @@ export default function ErrorDetailPage() {
         setIsScreenshotting(true);
 
         try {
-            // 创建 CaptureController 来控制焦点行为
-            let controller;
-            if ('CaptureController' in window) {
-                controller = new (window as any).CaptureController();
-            }
+            // 创建 CaptureController 并预设不切换焦点（选完窗口浏览器保持前台）
+            const controller = createNoFocusCaptureController();
 
             // 请求屏幕共享权限
             const displayMediaOptions: DisplayMediaStreamOptions & {
@@ -352,24 +338,10 @@ export default function ErrorDetailPage() {
             }
 
             const stream = await getDisplayStreamWithRetry(displayMediaOptions);
+            tryRefocusWindow();
 
             // 保存流以供后续使用
             setScreenshotStream(stream);
-
-            // 获取视频轨道并检查捕获类型
-            const [videoTrack] = stream.getVideoTracks();
-            const settings = videoTrack.getSettings();
-            const displaySurface = (settings as any).displaySurface;
-
-            // 如果是标签页或窗口，设置不切换焦点
-            if (controller && (displaySurface === 'browser' || displaySurface === 'window')) {
-                try {
-                    controller.setFocusBehavior('no-focus-change');
-                    console.log('✅ 已设置不切换焦点行为');
-                } catch (e) {
-                    console.warn('⚠️ 无法设置焦点行为:', e);
-                }
-            }
 
             // 创建视频元素
             const video = document.createElement('video');
@@ -672,11 +644,8 @@ export default function ErrorDetailPage() {
         setIsAnalysisScreenshotting(true);
 
         try {
-            // 创建 CaptureController 来控制焦点行为
-            let controller;
-            if ('CaptureController' in window) {
-                controller = new (window as any).CaptureController();
-            }
+            // 创建 CaptureController 并预设不切换焦点（选完窗口浏览器保持前台）
+            const controller = createNoFocusCaptureController();
 
             // 请求屏幕共享权限
             const displayMediaOptions: DisplayMediaStreamOptions & {
@@ -697,24 +666,10 @@ export default function ErrorDetailPage() {
             }
 
             const stream = await getDisplayStreamWithRetry(displayMediaOptions);
+            tryRefocusWindow();
 
             // 保存流以供后续使用
             setAnalysisScreenshotStream(stream);
-
-            // 获取视频轨道并检查捕获类型
-            const [videoTrack] = stream.getVideoTracks();
-            const settings = videoTrack.getSettings();
-            const displaySurface = (settings as any).displaySurface;
-
-            // 如果是标签页或窗口，设置不切换焦点
-            if (controller && (displaySurface === 'browser' || displaySurface === 'window')) {
-                try {
-                    controller.setFocusBehavior('no-focus-change');
-                    console.log('✅ 已设置不切换焦点行为');
-                } catch (e) {
-                    console.warn('⚠️ 无法设置焦点行为:', e);
-                }
-            }
 
             // 创建视频元素
             const video = document.createElement('video');

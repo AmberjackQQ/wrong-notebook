@@ -1,23 +1,12 @@
 "use client";
 
-// 添加 CaptureController 类型声明
-declare global {
-  interface Window {
-    CaptureController: {
-      new(): {
-        setFocusBehavior(behavior: 'no-focus-change' | 'focus-capturing-application'): void;
-      };
-    };
-  }
-}
-
 import { useState, useRef, useEffect } from "react";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { X, ImageIcon, Monitor } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
-import { getDisplayStreamWithRetry, screenshotErrorMessage } from "@/lib/screenshot";
+import { getDisplayStreamWithRetry, screenshotErrorMessage, createNoFocusCaptureController, tryRefocusWindow } from "@/lib/screenshot";
 
 interface PastedImage {
   id: string;
@@ -123,11 +112,8 @@ export function RichTextEditorWithImage({
     try {
       setIsScreenshotting(true);
 
-      // 创建 CaptureController 来控制焦点行为
-      let controller;
-      if ('CaptureController' in window) {
-        controller = new (window as any).CaptureController();
-      }
+      // 创建 CaptureController 并预设不切换焦点（选完窗口浏览器保持前台）
+      const controller = createNoFocusCaptureController();
 
       // 请求屏幕共享权限
       const displayMediaOptions: DisplayMediaStreamOptions & {
@@ -148,22 +134,10 @@ export function RichTextEditorWithImage({
       }
 
       const stream = await getDisplayStreamWithRetry(displayMediaOptions);
-
-      // 获取视频轨道并检查捕获类型
-      const [videoTrack] = stream.getVideoTracks();
-      const settings = videoTrack.getSettings();
-      const displaySurface = (settings as any).displaySurface;
-
-      // 如果是标签页或窗口，设置不切换焦点
-      if (controller && (displaySurface === 'browser' || displaySurface === 'window')) {
-        try {
-          controller.setFocusBehavior('no-focus-change');
-        } catch (e) {
-          console.warn('无法设置焦点行为:', e);
-        }
-      }
+      tryRefocusWindow();
 
       // 监听用户取消屏幕共享
+      const [videoTrack] = stream.getVideoTracks();
       videoTrack.onended = () => {
         console.log('用户取消屏幕共享');
         resetScreenshotState();
@@ -183,8 +157,8 @@ export function RichTextEditorWithImage({
         // 等待几帧，确保视频有数据
         setTimeout(() => {
           const canvas = document.createElement('canvas');
-          canvas.width = settings.width ? settings.width : video.videoWidth;
-          canvas.height = settings.height ? settings.height : video.videoHeight;
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
 
           const ctx = canvas.getContext('2d');
           if (ctx) {
