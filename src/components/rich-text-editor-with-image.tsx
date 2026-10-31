@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { X, ImageIcon, Monitor } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
 import { getDisplayStreamWithRetry, screenshotErrorMessage, createNoFocusCaptureController, tryRefocusWindow } from "@/lib/screenshot";
+import { foldBase64Images, expandBase64Images } from "@/lib/image-fold";
 
 interface PastedImage {
   id: string;
@@ -33,6 +34,13 @@ export function RichTextEditorWithImage({
 }: RichTextEditorWithImageProps) {
   const [images, setImages] = useState<PastedImage[]>(existingImages);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // base64 图片折叠：编辑框显示 [图片N] 占位符，输入时还原成完整 data URL，
+  // onChange 向父组件上报的始终是完整内容
+  const folded = useMemo(() => {
+    const tokens = new Map<number, string>();
+    return { text: foldBase64Images(value ?? "", tokens), tokens };
+  }, [value]);
 
   // 屏幕截图相关状态
   const [isScreenshotting, setIsScreenshotting] = useState(false);
@@ -371,7 +379,7 @@ export function RichTextEditorWithImage({
   };
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    onChange(e.target.value, images);
+    onChange(expandBase64Images(e.target.value, folded.tokens), images);
   };
 
   // Sync with existingImages when they change from parent
@@ -398,7 +406,7 @@ export function RichTextEditorWithImage({
       <div className="relative">
         <Textarea
           ref={textareaRef}
-          value={value ?? ""}
+          value={folded.text}
           onChange={handleTextChange}
           onPaste={handlePaste}
           placeholder={placeholder}
@@ -421,6 +429,9 @@ export function RichTextEditorWithImage({
           </Button>
         </div>
       </div>
+      <p className="text-xs text-muted-foreground">
+        图片以 [图片N] 占位符折叠显示（请勿改动占位符），实际图片在下方预览查看
+      </p>
 
       {/* 屏幕截图预览和裁剪 - 固定在最顶层 */}
       {isScreenshotting && screenshotPreview && (
