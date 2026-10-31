@@ -909,7 +909,7 @@ function PrintPreviewContent() {
                     return (
                         <div
                             key={item.id}
-                            className={`mb-4 border-b last:border-b-0 ${index > 0 ? "print:break-before-page" : ""}`}
+                            className={`mb-4 border-b last:border-b-0 print:border-b-0 ${index > 0 ? "print:break-before-page" : ""}`}
                         >
                             {/* 题干块（第1页起）：二维码 + 题干；打印时撑满到末页页底（--print-min-h 由测量页数决定） */}
                             <div
