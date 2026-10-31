@@ -141,9 +141,12 @@ const KatexBlock: React.FC<{ math: string }> = ({ math }) => {
 
 // 块级 HTML（PaddleOCR 识别结果常含 <table>、列表等）：整块原样渲染。
 // 不能走 processInlineMarkdown——其 \n→<br/> 替换会插到表格标签之间，
-// 浏览器解析时把非法节点提升到表格外，表格结构被破坏
+// 浏览器解析时把非法节点提升到表格外，表格结构被破坏。
+// 第一分支把"直接包裹块级元素的 div"连同包裹内容（含尾部少量 img/br）整体匹配，
+// 否则裸 <table> 被单独抽成独立块后与外层 div、同层 <img> 分家，
+// 内容里写的 text-align/flex 等并排样式全部失效
 const buildHtmlBlockRegex = () =>
-    /<(table|thead|tbody|tfoot|ul|ol|dl|pre|blockquote)\b[\s\S]*?<\/\1>/gi;
+    /<div\b[^>]*>\s*<(table|thead|tbody|tfoot|ul|ol|dl|pre|blockquote)\b[\s\S]*?<\/\1>(?:\s|<img\b[^>]*\/?>|<br\s*\/?>)*<\/div\s*>|<(table|thead|tbody|tfoot|ul|ol|dl|pre|blockquote)\b[\s\S]*?<\/\2>/gi;
 
 // HTML 块容器：注入后对块内文本再做一次 KaTeX 自动渲染，
 // 让表格单元格等位置的 $...$、\(...\) 公式正常显示
