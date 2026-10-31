@@ -318,6 +318,10 @@ function PrintPreviewContent() {
                     // 克隆自带上一轮渲染写入的 --print-min-h（inline），镜像的 min-height 规则
                     // 会拿旧值把测量撑大造成自反馈；剥掉后 var 落到 fallback auto = 自然测量
                     clone.style.removeProperty("--print-min-h");
+                    // 默认模式下题干块打印布局不含底部 padding（print:pb-0），页数按内容高度算——
+                    // 尾部 padding 跨过页底会在真实打印留下纯 padding 残根被 min-h 撑成整页空白。
+                    // 镜像规则用后代作用域（#__mcol xxx）匹配不到克隆根上的类，需在此显式对齐
+                    if (!reserveAnswerSpace && key.endsWith(":stem")) clone.style.paddingBottom = "0";
                     // 镜像样式挂在克隆自身：随后读连续流高度时打印规则已生效
                     //（选择器前缀 #__mcol 需要，克隆根即 #__mcol）
                     clone.id = "__mcol";
@@ -914,7 +918,7 @@ function PrintPreviewContent() {
                             {/* 题干块（第1页起）：二维码 + 题干；打印时撑满到末页页底（--print-min-h 由测量页数决定） */}
                             <div
                                 data-print-chunk={`${item.id}:stem`}
-                                className={`print:relative ${reserveAnswerSpace ? "pb-20 print:pb-16" : "pb-6"}`}
+                                className={`print:relative ${reserveAnswerSpace ? "pb-20 print:pb-16" : "pb-6 print:pb-0"}`}
                                 style={chunkMinHeightVar(stemPages)}
                             >
                             {/* QR Code: 与题干同页（第1页），扫码定位本题（打印需要足够大便于手机扫描）；
