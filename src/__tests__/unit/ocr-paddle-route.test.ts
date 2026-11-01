@@ -119,6 +119,69 @@ describe('POST /api/ocr/paddle', () => {
         expect(init.body.get('model')).toBe('PaddleOCR-VL-1.6');
     });
 
+    it('识别结果去除多余空行（连续空行压缩为一个空行，空白行视为空行）', async () => {
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            json: async () => ({ data: { jobId: 'job-blank' } }),
+        });
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            json: async () => ({ data: { state: 'done', resultUrl: { jsonUrl: 'https://x/blank.jsonl' } } }),
+        });
+        const jsonl = JSON.stringify({
+            result: {
+                layoutParsingResults: [
+                    {
+                        markdown: {
+                            text: '第一行\n\n\n\n\n第二行\n  \n\n\n第三行  \n结尾',
+                        },
+                    },
+                ],
+            },
+        });
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            text: async () => jsonl,
+        });
+
+        const res = await POST(makeRequest({ image: DATA_URL }));
+        const body = await res.json();
+
+        expect(res.status).toBe(200);
+        expect(body.markdown).toBe('第一行\n\n第二行\n\n第三行\n结尾');
+    });
+
+    it('多页拼接的页间空行不被误删，页内多余空行仍压缩', async () => {
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            json: async () => ({ data: { jobId: 'job-pages' } }),
+        });
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            json: async () => ({ data: { state: 'done', resultUrl: { jsonUrl: 'https://x/pages.jsonl' } } }),
+        });
+        const jsonl = [
+            JSON.stringify({ result: { layoutParsingResults: [{ markdown: { text: '第一页中间\n\n\n\n第一页末尾' } }] } }),
+            JSON.stringify({ result: { layoutParsingResults: [{ markdown: { text: '\n\n\n\n第二页开头' } }] } }),
+        ].join('\n');
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            text: async () => jsonl,
+        });
+
+        const res = await POST(makeRequest({ image: DATA_URL }));
+        const body = await res.json();
+
+        expect(res.status).toBe(200);
+        expect(body.markdown).toBe('第一页中间\n\n第一页末尾\n\n第二页开头');
+    });
+
     it('HTML img 引用带 images 映射时内联为 data URL，无映射时剔除', async () => {
         mockFetch.mockResolvedValueOnce({
             ok: true,

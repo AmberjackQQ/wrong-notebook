@@ -99,6 +99,15 @@ function sleep(ms: number) {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// 去除多余空行：行尾空白清掉（"只含空白的行"归为空行），连续空行压缩为一个空行。
+// 飞桨识别结果常有大段连续空行，直接填入编辑框会撑出一屏空白
+function collapseBlankLines(text: string): string {
+    return text
+        .replace(/[ \t]+(\r?\n)/g, '$1')
+        .replace(/(?:\r?\n){3,}/g, '\n\n')
+        .trim();
+}
+
 export async function POST(req: Request) {
     const session = await getServerSession(authOptions);
 
@@ -212,7 +221,7 @@ export async function POST(req: Request) {
             }
         }
 
-        return NextResponse.json({ markdown: pages.join('\n\n') });
+        return NextResponse.json({ markdown: collapseBlankLines(pages.join('\n\n')) });
     } catch (error: unknown) {
         logger.error({ error }, 'PaddleOCR route error');
         return internalError(`OCR 识别失败: ${error instanceof Error ? error.message : '未知错误'}`);
