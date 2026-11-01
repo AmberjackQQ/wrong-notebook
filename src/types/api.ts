@@ -40,6 +40,8 @@ export interface Notebook {
     userId: string;
     createdAt: string;
     updatedAt: string;
+    reviewCount?: number;
+    masteredCount?: number;
     _count?: {
         errorItems: number;
     };

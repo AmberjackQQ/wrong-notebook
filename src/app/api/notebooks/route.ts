@@ -9,7 +9,7 @@ const logger = createLogger('api:notebooks');
 
 /**
  * GET /api/notebooks
- * 获取用户所有错题本（Subjects）
+ * 获取用户所有错题本（Subjects），附每本的 待复习/已掌握 题数
  */
 export async function GET() {
     const session = await getServerSession(authOptions);
@@ -25,6 +25,16 @@ export async function GET() {
         if (!user) {
             return unauthorized("Authentication required");
         }
+
+        // 待复习（masteryLevel=0）/ 已掌握（masteryLevel>0）口径与错题列表页一致
+        const attachMasteryCounts = async <T extends { id: string }>(rows: T[]) =>
+            Promise.all(rows.map(async (n) => {
+                const [reviewCount, masteredCount] = await Promise.all([
+                    prisma.errorItem.count({ where: { userId: user!.id, subjectId: n.id, masteryLevel: 0 } }),
+                    prisma.errorItem.count({ where: { userId: user!.id, subjectId: n.id, masteryLevel: { gt: 0 } } }),
+                ]);
+                return { ...n, reviewCount, masteredCount };
+            }));
 
         let notebooks = await prisma.subject.findMany({
             where: {
@@ -73,7 +83,7 @@ export async function GET() {
             });
         }
 
-        return NextResponse.json(notebooks);
+        return NextResponse.json(await attachMasteryCounts(notebooks));
     } catch (error) {
         logger.error({ error }, 'Error fetching notebooks');
         return internalError("Failed to fetch notebooks");
@@ -134,7 +144,7 @@ export async function POST(req: Request) {
             },
         });
 
-        return NextResponse.json(notebook, { status: 201 });
+        return NextResponse.json({ ...notebook, reviewCount: 0, masteredCount: 0 }, { status: 201 });
     } catch (error) {
         logger.error({ error }, 'Error creating notebook');
         return internalError("Failed to create notebook");

@@ -141,6 +141,10 @@ export default function NotebooksPage() {
                                 id={notebook.id}
                                 name={notebook.name}
                                 errorCount={notebook._count?.errorItems || 0}
+                                reviewCount={notebook.reviewCount ?? 0}
+                                masteredCount={notebook.masteredCount ?? 0}
+                                reviewLabel={t.notebook?.review || "待复习"}
+                                masteredLabel={t.notebook?.mastered || "已掌握"}
                                 onClick={() => handleNotebookClick(notebook.id)}
                                 onRename={() => setRenameTarget(notebook)}
                                 onDelete={() => handleDelete(notebook.id, notebook._count?.errorItems || 0, notebook.name)}

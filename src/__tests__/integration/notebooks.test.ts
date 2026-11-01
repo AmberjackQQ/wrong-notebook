@@ -18,6 +18,9 @@ const mocks = vi.hoisted(() => ({
         update: vi.fn(),
         delete: vi.fn(),
     },
+    mockPrismaErrorItem: {
+        count: vi.fn(),
+    },
     mockSession: {
         user: {
             email: 'user@example.com',
@@ -32,6 +35,7 @@ vi.mock('@/lib/prisma', () => ({
     prisma: {
         user: mocks.mockPrismaUser,
         subject: mocks.mockPrismaSubject,
+        errorItem: mocks.mockPrismaErrorItem,
     },
 }));
 
@@ -60,6 +64,7 @@ describe('/api/notebooks', () => {
         vi.clearAllMocks();
         mocks.mockPrismaUser.findUnique.mockResolvedValue(mockUser);
         mocks.mockPrismaUser.findFirst.mockResolvedValue(mockUser);
+        mocks.mockPrismaErrorItem.count.mockResolvedValue(0);
         vi.mocked(getServerSession).mockResolvedValue(mocks.mockSession);
     });
 
@@ -78,6 +83,28 @@ describe('/api/notebooks', () => {
             expect(data).toHaveLength(2);
             expect(data[0].name).toBe('数学');
             expect(data[0]._count.errorItems).toBe(5);
+        });
+
+        it('应该返回每本错题本的 待复习/已掌握 题数', async () => {
+            mocks.mockPrismaSubject.findMany.mockResolvedValue([
+                { id: 'nb-1', name: '数学', userId: 'user-123', _count: { errorItems: 5 } },
+                { id: 'nb-2', name: '英语', userId: 'user-123', _count: { errorItems: 3 } },
+            ]);
+            // 每本错题本按 [待复习, 已掌握] 顺序各查询一次
+            mocks.mockPrismaErrorItem.count
+                .mockResolvedValueOnce(4)  // nb-1 待复习
+                .mockResolvedValueOnce(1)  // nb-1 已掌握
+                .mockResolvedValueOnce(3)  // nb-2 待复习
+                .mockResolvedValueOnce(0); // nb-2 已掌握
+
+            const response = await GET();
+            const data = await response.json();
+
+            expect(response.status).toBe(200);
+            expect(data[0].reviewCount).toBe(4);
+            expect(data[0].masteredCount).toBe(1);
+            expect(data[1].reviewCount).toBe(3);
+            expect(data[1].masteredCount).toBe(0);
         });
 
         it('应该在没有错题本时创建默认错题本', async () => {
