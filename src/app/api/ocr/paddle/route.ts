@@ -99,12 +99,13 @@ function sleep(ms: number) {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// 去除多余空行：行尾空白清掉（"只含空白的行"归为空行），连续空行压缩为一个空行。
-// 飞桨识别结果常有大段连续空行，直接填入编辑框会撑出一屏空白
+// 去除全部空行：行尾空白清掉（"只含空白的行"归为空行），任何连续换行压缩为单个换行，
+// 识别结果每行紧密相连不留空行（飞桨结果空行多，直接填入编辑框会撑出一屏空白；
+// 展示端 MarkdownRenderer 本就逐行渲染，空行无结构意义）
 function collapseBlankLines(text: string): string {
     return text
         .replace(/[ \t]+(\r?\n)/g, '$1')
-        .replace(/(?:\r?\n){3,}/g, '\n\n')
+        .replace(/(?:\r?\n){2,}/g, '\n')
         .trim();
 }
 
