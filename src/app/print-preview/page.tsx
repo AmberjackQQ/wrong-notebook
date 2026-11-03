@@ -347,7 +347,7 @@ function PrintPreviewContent() {
                     // （break-inside-avoid、不可拆分图片、标题避尾…）分列，列数=打印页数。
                     // 纯高度÷页高会把「单元被整体推到下页」造成的页尾留白漏掉而低估页数
                     //（末页缺页码、偶数页补位判断失效），故与高度估算取较大者
-                    const MEAS_H = PRINT_PAGE_CONTENT_HEIGHT_PX - 1; // 打印页可用高 297mm≈1122.5px，留 1px 余量防边界溢出误判
+                    const MEAS_H = PRINT_PAGE_CONTENT_HEIGHT_PX - 1; // 打印页可用高 277mm≈1046.9px，留 1px 余量防边界溢出误判
                     const COL_GAP = 40;
                     const box = document.createElement("div");
                     box.style.cssText = `width:${PRINT_PAGE_CONTENT_WIDTH_PX}px;height:${MEAS_H}px;column-width:${PRINT_PAGE_CONTENT_WIDTH_PX}px;column-gap:${COL_GAP}px;column-fill:auto;`;
