@@ -7,6 +7,8 @@ import { BackButton } from "@/components/ui/back-button";
 import { Plus, House, Pencil } from "lucide-react";
 import Link from "next/link";
 import { ErrorList } from "@/components/error-list";
+import { VocabularyList } from "@/components/vocabulary-list";
+import { AddVocabularyDialog } from "@/components/add-vocabulary-dialog";
 import { RenameNotebookDialog } from "@/components/rename-notebook-dialog";
 
 import { Notebook } from "@/types/api";
@@ -23,6 +25,8 @@ export default function NotebookDetailPage() {
     const [notebook, setNotebook] = useState<Notebook | null>(null);
     const [loading, setLoading] = useState(true);
     const [renameDialogOpen, setRenameDialogOpen] = useState(false);
+    const [addVocabOpen, setAddVocabOpen] = useState(false);
+    const [vocabRefresh, setVocabRefresh] = useState(0);
 
     useEffect(() => {
         if (params.id) {
@@ -59,6 +63,11 @@ export default function NotebookDetailPage() {
 
     if (!notebook) return null;
 
+    const isVocab = notebook.type === "vocab";
+    const itemCount = isVocab
+        ? (notebook._count?.vocabEntries ?? 0)
+        : (notebook._count?.errorItems || 0);
+
     return (
         <main className="min-h-screen p-4 md:p-8 bg-background">
             <div className="max-w-6xl mx-auto space-y-6 md:space-y-8">
@@ -77,19 +86,33 @@ export default function NotebookDetailPage() {
                             </Button>
                         </div>
                         <p className="text-muted-foreground text-sm sm:text-base">
-                            {(t.notebooks?.totalErrors || "Total {count} errors").replace("{count}", (notebook._count?.errorItems || 0).toString())}
+                            {isVocab
+                                ? (t.vocabulary?.totalCount || "共 {count} 个词汇").replace("{count}", itemCount.toString())
+                                : (t.notebooks?.totalErrors || "Total {count} errors").replace("{count}", itemCount.toString())}
                         </p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                        <Link href={`/notebooks/${notebook.id}/add`}>
-                            <Button size="sm" className="hidden sm:flex">
-                                <Plus className="mr-2 h-4 w-4" />
-                                {t.notebooks?.addError || "Add Error"}
-                            </Button>
-                            <Button size="icon" className="sm:hidden">
-                                <Plus className="h-4 w-4" />
-                            </Button>
-                        </Link>
+                        {isVocab ? (
+                            <>
+                                <Button size="sm" className="hidden sm:flex" onClick={() => setAddVocabOpen(true)}>
+                                    <Plus className="mr-2 h-4 w-4" />
+                                    {t.vocabulary?.add || "添加词汇"}
+                                </Button>
+                                <Button size="icon" className="sm:hidden" onClick={() => setAddVocabOpen(true)}>
+                                    <Plus className="h-4 w-4" />
+                                </Button>
+                            </>
+                        ) : (
+                            <Link href={`/notebooks/${notebook.id}/add`}>
+                                <Button size="sm" className="hidden sm:flex">
+                                    <Plus className="mr-2 h-4 w-4" />
+                                    {t.notebooks?.addError || "Add Error"}
+                                </Button>
+                                <Button size="icon" className="sm:hidden">
+                                    <Plus className="h-4 w-4" />
+                                </Button>
+                            </Link>
+                        )}
                         <Link href="/upload">
                             <Button variant="ghost" size="icon">
                                 <House className="h-5 w-5" />
@@ -98,7 +121,11 @@ export default function NotebookDetailPage() {
                     </div>
                 </div>
 
-                <ErrorList subjectId={notebook.id} subjectName={notebook.name} />
+                {isVocab ? (
+                    <VocabularyList subjectId={notebook.id} refreshKey={vocabRefresh} />
+                ) : (
+                    <ErrorList subjectId={notebook.id} subjectName={notebook.name} />
+                )}
 
                 <RenameNotebookDialog
                     open={renameDialogOpen}
@@ -106,6 +133,18 @@ export default function NotebookDetailPage() {
                     currentName={notebook.name}
                     onRename={handleRename}
                 />
+
+                {isVocab && (
+                    <AddVocabularyDialog
+                        open={addVocabOpen}
+                        onOpenChange={setAddVocabOpen}
+                        subjectId={notebook.id}
+                        onAdded={() => {
+                            setVocabRefresh((n) => n + 1);
+                            fetchNotebook(notebook.id);
+                        }}
+                    />
+                )}
             </div>
         </main>
     );

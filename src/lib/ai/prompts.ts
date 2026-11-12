@@ -714,3 +714,51 @@ export function generateKnowledgeTagsPrompt(
     analysis: options?.analysis?.trim() || '（无）',
   }).trim();
 }
+
+/**
+ * 词汇 AI 例句生成提示词
+ * 用于英语词汇本：为单词生成 3-5 条难度递进的例句；
+ * 用户提供例句时，生成的例句贴近其语境
+ */
+export const DEFAULT_VOCAB_EXAMPLES_TEMPLATE = `【角色与核心任务 (ROLE AND CORE TASK)】
+你是一位经验丰富的英语教师，任务是为英语学习者生成单词例句，用于词汇本学习。
+
+【单词 (WORD)】
+{{word}}
+
+【用户参考例句 (USER SENTENCE，可能为空)】
+{{user_sentence}}
+
+【生成要求 (RULES)】
+1. 生成 3-5 条例句，按难度从易到难排列，覆盖单词的主要词义和词性。
+2. 每条例句必须自然、地道、语法正确，长度适中（8-20 个单词）。
+3. 每条例句配简体中文翻译，翻译准确通顺。
+4. 如果提供了用户参考例句，生成的例句应贴近其语境或主题。
+5. 例句中的目标单词保持原形出现（用户例句中的形态除外）。
+
+【输出格式 (OUTPUT FORMAT)】
+你的响应必须严格遵循以下 XML 标签格式，不要输出其他任何文字：
+<examples>
+<example><en>例句1</en><zh>翻译1</zh></example>
+<example><en>例句2</en><zh>翻译2</zh></example>
+</examples>`;
+
+export interface VocabExamplesPromptOptions {
+  userSentence?: string;
+  customTemplate?: string;
+}
+
+/**
+ * 生成词汇例句提示词
+ */
+export function generateVocabExamplesPrompt(
+  word: string,
+  options?: VocabExamplesPromptOptions
+): string {
+  const template = options?.customTemplate?.trim() || DEFAULT_VOCAB_EXAMPLES_TEMPLATE;
+
+  return replaceVariables(template, {
+    word,
+    user_sentence: options?.userSentence?.trim() || '（无）',
+  }).trim();
+}

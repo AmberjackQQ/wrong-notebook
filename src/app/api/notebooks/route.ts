@@ -44,6 +44,7 @@ export async function GET() {
                 _count: {
                     select: {
                         errorItems: true,
+                        vocabEntries: true,
                     },
                 },
             },
@@ -74,6 +75,7 @@ export async function GET() {
                     _count: {
                         select: {
                             errorItems: true,
+                            vocabEntries: true,
                         },
                     },
                 },
@@ -81,6 +83,35 @@ export async function GET() {
                     createdAt: 'desc',
                 },
             });
+        }
+
+        // 幂等补建「英语词汇」本：默认创建仅在新用户 0 本时触发，老用户需在此补齐。
+        // 已有同名普通本时转为词汇本，避免唯一约束冲突导致 GET 500
+        if (!notebooks.some((n) => n.type === 'vocab')) {
+            const sameNamed = notebooks.find((n) => n.name === '英语词汇');
+            if (sameNamed) {
+                await prisma.subject.update({
+                    where: { id: sameNamed.id },
+                    data: { type: 'vocab' },
+                });
+                sameNamed.type = 'vocab';
+            } else {
+                await prisma.subject.create({
+                    data: { name: '英语词汇', userId: user.id, type: 'vocab' },
+                });
+                notebooks = await prisma.subject.findMany({
+                    where: { userId: user.id },
+                    include: {
+                        _count: {
+                            select: {
+                                errorItems: true,
+                                vocabEntries: true,
+                            },
+                        },
+                    },
+                    orderBy: { createdAt: 'desc' },
+                });
+            }
         }
 
         return NextResponse.json(await attachMasteryCounts(notebooks));
@@ -139,6 +170,7 @@ export async function POST(req: Request) {
                 _count: {
                     select: {
                         errorItems: true,
+                        vocabEntries: true,
                     },
                 },
             },

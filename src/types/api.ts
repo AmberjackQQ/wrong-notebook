@@ -38,13 +38,37 @@ export interface Notebook {
     id: string;
     name: string;
     userId: string;
+    type?: "error" | "vocab"; // 错题本类型：error 普通错题本 | vocab 英语词汇本
     createdAt: string;
     updatedAt: string;
     reviewCount?: number;
     masteredCount?: number;
     _count?: {
         errorItems: number;
+        vocabEntries?: number;
     };
+}
+
+// 英语词汇词条（词典字段来自 ECDICT，查词未命中时为空）
+export interface VocabularyEntry {
+    id: string;
+    userId: string;
+    subjectId: string;
+    subject?: Notebook | null;
+    word: string;
+    phonetic?: string | null;
+    translation?: string | null;
+    definition?: string | null;
+    pos?: string | null;
+    collins?: number | null;
+    oxford?: number | null;
+    tags?: string | null;
+    exchange?: string | null;
+    sentence?: string | null;
+    aiExamples?: string | null; // JSON [{en, zh}]
+    note?: string | null;
+    createdAt: string;
+    updatedAt: string;
 }
 
 export interface ErrorItem {

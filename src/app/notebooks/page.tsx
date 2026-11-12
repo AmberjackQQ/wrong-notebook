@@ -58,8 +58,8 @@ export default function NotebooksPage() {
         await fetchNotebooks();
     };
 
-    const handleDelete = async (id: string, errorCount: number, name: string) => {
-        if (errorCount > 0) {
+    const handleDelete = async (id: string, itemCount: number, name: string) => {
+        if (itemCount > 0) {
             alert(t.notebooks?.deleteNotEmpty || "Please clear all items in this notebook first.");
             return;
         }
@@ -140,15 +140,17 @@ export default function NotebooksPage() {
                                 key={notebook.id}
                                 id={notebook.id}
                                 name={notebook.name}
+                                type={notebook.type}
                                 errorCount={notebook._count?.errorItems || 0}
+                                vocabCount={notebook._count?.vocabEntries || 0}
                                 reviewCount={notebook.reviewCount ?? 0}
                                 masteredCount={notebook.masteredCount ?? 0}
                                 reviewLabel={t.notebook?.review || "待复习"}
                                 masteredLabel={t.notebook?.mastered || "已掌握"}
                                 onClick={() => handleNotebookClick(notebook.id)}
                                 onRename={() => setRenameTarget(notebook)}
-                                onDelete={() => handleDelete(notebook.id, notebook._count?.errorItems || 0, notebook.name)}
-                                itemLabel={t.notebooks?.items || "items"}
+                                onDelete={() => handleDelete(notebook.id, (notebook._count?.errorItems || 0) + (notebook._count?.vocabEntries || 0), notebook.name)}
+                                itemLabel={notebook.type === "vocab" ? (t.vocabulary?.items || "个词汇") : (t.notebooks?.items || "items")}
                             />
                         ))}
                     </div>

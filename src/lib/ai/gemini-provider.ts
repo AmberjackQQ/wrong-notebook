@@ -1,7 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
-import { AIService, ParsedQuestion, DifficultyLevel, AIConfig, ReanswerQuestionResult, GeogebraAnalysisResult, KnowledgeTagsOptions } from "./types";
-import { generateAnalyzePrompt, generateSimilarQuestionPrompt, generateGeogebraPrompt, generateKnowledgeTagsPrompt, getSubjectLabel } from './prompts';
-import { safeParseParsedQuestion } from './schema';
+import { AIService, ParsedQuestion, DifficultyLevel, AIConfig, ReanswerQuestionResult, GeogebraAnalysisResult, KnowledgeTagsOptions, VocabExamplesResult } from "./types";
+import { generateAnalyzePrompt, generateSimilarQuestionPrompt, generateGeogebraPrompt, generateKnowledgeTagsPrompt, generateVocabExamplesPrompt, getSubjectLabel } from './prompts';
+import { safeParseParsedQuestion, parseVocabExamplesXml } from './schema';
 import { getAppConfig } from '../config';
 import { getMathTagsFromDB, getTagsFromDB } from './tag-service';
 import { createLogger } from '../logger';
@@ -444,6 +444,33 @@ export class GeminiProvider implements AIService {
         ));
         if (tags.length === 0) throw new Error("AI 未返回有效的知识点标签");
         return tags.slice(0, 8);
+    }
+
+    async generateVocabExamples(word: string, sentence?: string): Promise<VocabExamplesResult> {
+        const prompt = generateVocabExamplesPrompt(word, { userSentence: sentence });
+
+        logger.info({
+            provider: 'Gemini',
+            model: this.modelName,
+            word,
+        }, 'Vocab examples request');
+
+        try {
+            const response = await this.retryOperation(() => this.ai.models.generateContent({
+                model: this.modelName,
+                contents: prompt
+            }));
+
+            const text = response.text || '';
+            logger.debug({ rawResponse: text }, 'Vocab examples raw response');
+
+            if (!text) throw new Error("Empty response from AI");
+            return parseVocabExamplesXml(text);
+        } catch (error) {
+            logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'Error during vocab examples generation');
+            this.handleError(error);
+            throw error;
+        }
     }
 
     private handleError(error: unknown) {

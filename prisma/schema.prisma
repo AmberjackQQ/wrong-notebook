@@ -27,6 +27,7 @@ model User {
 
   errorItems ErrorItem[]
   subjects   Subject[]
+  vocabEntries VocabularyEntry[]
   practiceRecords PracticeRecord[]
   customTags KnowledgeTag[] // User's custom tags
   questionSources QuestionSource[] // User's custom question sources
@@ -70,13 +71,49 @@ model Subject {
   name   String
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // 错题本类型："error" 普通错题本 | "vocab" 英语词汇本
+  type   String @default("error")
 
-  errorItems ErrorItem[]
+  errorItems   ErrorItem[]
+  vocabEntries VocabularyEntry[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@unique([name, userId])
+}
+
+// 英语词汇本中的词条（词典数据来自 ECDICT 开源词典，MIT 许可）
+model VocabularyEntry {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subjectId String
+  subject   Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  // 单词（小写归一存储，@@unique 防同本重复）
+  word String
+
+  // ECDICT 词典字段（查词未命中时为空，词条仍保存）
+  phonetic    String? // 音标
+  translation String? // 中文释义（每行一条）
+  definition  String? // 英文释义（每行一条）
+  pos         String? // 词性占比，如 "n:46/v:54"
+  collins     Int?    // 柯林斯星级 1~5
+  oxford      Int?    // 是否牛津三千核心词汇
+  tags        String? // 考试标签：zk/gk/cet4/cet6/kaoyan/toefl/ielts/gre 空格分割
+  exchange    String? // 词形变化：p:过去式/d:过去分词/i:现在分词/3:三单/s:复数/0:Lemma
+
+  // 例句与笔记
+  sentence   String? // 用户输入的例句
+  aiExamples String? // JSON [{en, zh}]，AI 生成
+  note       String? // 用户笔记
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([subjectId, word])
+  @@index([userId, subjectId, createdAt])
 }
 
 model ErrorItem {

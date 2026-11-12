@@ -36,6 +36,7 @@ export async function GET(
                 _count: {
                     select: {
                         errorItems: true,
+                        vocabEntries: true,
                     },
                 },
             },
@@ -107,6 +108,7 @@ export async function PUT(
                 _count: {
                     select: {
                         errorItems: true,
+                        vocabEntries: true,
                     },
                 },
             },
@@ -148,6 +150,7 @@ export async function DELETE(
                 _count: {
                     select: {
                         errorItems: true,
+                        vocabEntries: true,
                     },
                 },
             },
@@ -161,9 +164,9 @@ export async function DELETE(
             return forbidden("Not authorized to delete this notebook");
         }
 
-        // 检查是否有错题
-        if (notebook._count.errorItems > 0) {
-            return badRequest("Cannot delete notebook with error items. Please move or delete all items first.");
+        // 检查是否有错题或词汇
+        if (notebook._count.errorItems > 0 || notebook._count.vocabEntries > 0) {
+            return badRequest("Cannot delete notebook with error items or vocabulary entries. Please move or delete all items first.");
         }
 
         await prisma.subject.delete({

@@ -107,13 +107,19 @@ describe('/api/notebooks', () => {
             expect(data[1].masteredCount).toBe(0);
         });
 
-        it('应该在没有错题本时创建默认错题本', async () => {
-            // 第一次查询返回空数组，创建后第二次查询返回默认错题本
+        it('应该在没有错题本时创建默认错题本（含补建英语词汇本）', async () => {
+            // 第一次查询返回空数组，创建默认本后第二次查询返回默认错题本；
+            // 默认本无 vocab 类型，幂等逻辑第三次查询返回补建的「英语词汇」本
             mocks.mockPrismaSubject.findMany
                 .mockResolvedValueOnce([])
                 .mockResolvedValueOnce([
-                    { id: 'nb-1', name: '数学', userId: 'user-123', _count: { errorItems: 0 } },
-                    { id: 'nb-2', name: '英语', userId: 'user-123', _count: { errorItems: 0 } },
+                    { id: 'nb-1', name: '数学', userId: 'user-123', type: 'error', _count: { errorItems: 0, vocabEntries: 0 } },
+                    { id: 'nb-2', name: '英语', userId: 'user-123', type: 'error', _count: { errorItems: 0, vocabEntries: 0 } },
+                ])
+                .mockResolvedValueOnce([
+                    { id: 'nb-1', name: '数学', userId: 'user-123', type: 'error', _count: { errorItems: 0, vocabEntries: 0 } },
+                    { id: 'nb-2', name: '英语', userId: 'user-123', type: 'error', _count: { errorItems: 0, vocabEntries: 0 } },
+                    { id: 'nb-3', name: '英语词汇', userId: 'user-123', type: 'vocab', _count: { errorItems: 0, vocabEntries: 0 } },
                 ]);
             mocks.mockPrismaSubject.create.mockResolvedValue({});
 
@@ -121,9 +127,25 @@ describe('/api/notebooks', () => {
             const data = await response.json();
 
             expect(response.status).toBe(200);
+            expect(data).toHaveLength(3);
+            // 验证创建了默认错题本（数学/英语）+ 补建的英语词汇本
+            expect(mocks.mockPrismaSubject.create).toHaveBeenCalledTimes(3);
+            expect(data[2].name).toBe('英语词汇');
+            expect(data[2].type).toBe('vocab');
+        });
+
+        it('已有英语词汇本时不再重复补建', async () => {
+            mocks.mockPrismaSubject.findMany.mockResolvedValue([
+                { id: 'nb-1', name: '数学', userId: 'user-123', type: 'error', _count: { errorItems: 0, vocabEntries: 0 } },
+                { id: 'nb-2', name: '英语词汇', userId: 'user-123', type: 'vocab', _count: { errorItems: 0, vocabEntries: 0 } },
+            ]);
+
+            const response = await GET();
+            const data = await response.json();
+
+            expect(response.status).toBe(200);
+            expect(mocks.mockPrismaSubject.create).not.toHaveBeenCalled();
             expect(data).toHaveLength(2);
-            // 验证创建了默认错题本
-            expect(mocks.mockPrismaSubject.create).toHaveBeenCalledTimes(2);
         });
     });
 

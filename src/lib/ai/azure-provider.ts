@@ -1,8 +1,8 @@
 import { AzureOpenAI } from "openai";
-import { AIService, ParsedQuestion, DifficultyLevel, ReanswerQuestionResult, GeogebraAnalysisResult, KnowledgeTagsOptions } from "./types";
-import { generateAnalyzePrompt, generateSimilarQuestionPrompt, generateReanswerPrompt, generateGeogebraPrompt, generateKnowledgeTagsPrompt, getSubjectLabel } from './prompts';
+import { AIService, ParsedQuestion, DifficultyLevel, ReanswerQuestionResult, GeogebraAnalysisResult, KnowledgeTagsOptions, VocabExamplesResult } from "./types";
+import { generateAnalyzePrompt, generateSimilarQuestionPrompt, generateReanswerPrompt, generateGeogebraPrompt, generateKnowledgeTagsPrompt, generateVocabExamplesPrompt, getSubjectLabel } from './prompts';
 import { getAppConfig } from '../config';
-import { safeParseParsedQuestion } from './schema';
+import { safeParseParsedQuestion, parseVocabExamplesXml } from './schema';
 import { getMathTagsFromDB, getTagsFromDB } from './tag-service';
 import { createLogger } from '../logger';
 import { normalizeMistakeStatusForSave } from '../mistake-status';
@@ -480,6 +480,38 @@ Knowledge Points: ${knowledgePoints.join(", ")}
         ));
         if (tags.length === 0) throw new Error("AI 未返回有效的知识点标签");
         return tags.slice(0, 8);
+    }
+
+    async generateVocabExamples(word: string, sentence?: string): Promise<VocabExamplesResult> {
+        const prompt = generateVocabExamplesPrompt(word, { userSentence: sentence });
+
+        logger.info({
+            provider: 'Azure OpenAI',
+            model: this.model,
+            deployment: this.deployment,
+            word,
+        }, 'Vocab examples request');
+
+        try {
+            const response = await this.client.chat.completions.create({
+                model: this.deployment,
+                messages: [
+                    { role: "system", content: prompt },
+                    { role: "user", content: "请为上述单词生成例句，只输出 <examples> 标签内容。" }
+                ],
+                max_tokens: 1024,
+            });
+
+            const text = response.choices[0]?.message?.content || '';
+            logger.debug({ rawResponse: text }, 'Vocab examples raw response');
+
+            if (!text) throw new Error("Empty response from AI");
+            return parseVocabExamplesXml(text);
+        } catch (error) {
+            logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'Error during vocab examples generation');
+            this.handleError(error);
+            throw error;
+        }
     }
 
     private handleError(error: unknown) {

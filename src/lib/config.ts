@@ -170,8 +170,17 @@ export function getAppConfig(): AppConfig {
                     instances: openaiConfig?.instances || DEFAULT_CONFIG.openai?.instances || [],
                     activeInstanceId: openaiConfig?.activeInstanceId || DEFAULT_CONFIG.openai?.activeInstanceId,
                 },
-                gemini: { ...DEFAULT_CONFIG.gemini, ...userConfig.gemini },
-                azure: { ...DEFAULT_CONFIG.azure, ...userConfig.azure },
+                gemini: {
+                    ...DEFAULT_CONFIG.gemini,
+                    ...userConfig.gemini,
+                    // 文件中的空 apiKey（如设置页保存过空值）不覆盖环境变量回退
+                    apiKey: userConfig.gemini?.apiKey || DEFAULT_CONFIG.gemini?.apiKey,
+                },
+                azure: {
+                    ...DEFAULT_CONFIG.azure,
+                    ...userConfig.azure,
+                    apiKey: userConfig.azure?.apiKey || DEFAULT_CONFIG.azure?.apiKey,
+                },
                 prompts: { ...DEFAULT_CONFIG.prompts, ...userConfig.prompts },
                 timeouts: { ...DEFAULT_CONFIG.timeouts, ...userConfig.timeouts },
                 paddleOcr: { ...DEFAULT_CONFIG.paddleOcr, ...userConfig.paddleOcr },

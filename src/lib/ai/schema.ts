@@ -36,6 +36,45 @@ export const SuggestTagsSchema = z.object({
 export type SuggestTagsResult = z.infer<typeof SuggestTagsSchema>;
 
 /**
+ * 词汇 AI 例句生成结果（generateVocabExamples）
+ */
+export const VocabExamplesSchema = z.object({
+    examples: z
+        .array(
+            z.object({
+                en: z.string().min(1),
+                zh: z.string().min(1),
+            })
+        )
+        .min(1)
+        .max(5),
+});
+
+export type VocabExamplesFromSchema = z.infer<typeof VocabExamplesSchema>;
+
+/**
+ * 解析并校验 AI 返回的词汇例句 XML（<examples><example><en/><zh/></example></examples>）
+ * 兼容 AI 漏掉外层 <examples> 标签的情况；无有效例句时抛错
+ */
+export function parseVocabExamplesXml(text: string): VocabExamplesFromSchema {
+    const examplesBlock =
+        text.match(/<examples>([\s\S]*?)<\/examples>/)?.[1] ?? text;
+    const examples: { en: string; zh: string }[] = [];
+    const exampleRe =
+        /<example>\s*<en>([\s\S]*?)<\/en>\s*<zh>([\s\S]*?)<\/zh>\s*<\/example>/g;
+    let match: RegExpExecArray | null;
+    while ((match = exampleRe.exec(examplesBlock)) !== null) {
+        const en = match[1].trim();
+        const zh = match[2].trim();
+        if (en && zh) examples.push({ en, zh });
+    }
+    if (examples.length === 0) {
+        throw new Error("AI 未返回有效的例句");
+    }
+    return VocabExamplesSchema.parse({ examples });
+}
+
+/**
  * Validates and parses AI response JSON
  * @param data - Raw JSON data from AI
  * @returns Validated ParsedQuestion object

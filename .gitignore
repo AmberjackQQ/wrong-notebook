@@ -79,3 +79,5 @@ upload_test_output*.txt
 .next-prebuilt/
 
 certificates
+# ECDICT dictionary (~1GB, download separately)
+/dictionaries
