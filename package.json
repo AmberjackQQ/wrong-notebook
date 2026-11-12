@@ -73,6 +73,7 @@
     "clsx": "^2.1.1",
     "eslint": "^9",
     "eslint-config-next": "16.0.8",
+    "js-mdict": "^7.0.0",
     "jsdom": "^27.2.0",
     "lucide-react": "^0.555.0",
     "prisma": "5.22.0",

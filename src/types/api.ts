@@ -64,6 +64,9 @@ export interface VocabularyEntry {
     oxford?: number | null;
     tags?: string | null;
     exchange?: string | null;
+    oxfordHtml?: string | null; // 完整牛津词典 HTML
+    oxfordExamples?: string | null; // JSON [{en, zh}]，牛津例句
+    dictSource?: string | null; // "oxford" | "ecdict"
     sentence?: string | null;
     aiExamples?: string | null; // JSON [{en, zh}]
     note?: string | null;

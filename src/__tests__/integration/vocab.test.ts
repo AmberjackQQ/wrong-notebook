@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
         count: vi.fn(),
     },
     mockLookupWord: vi.fn(),
+    mockLookupOxford: vi.fn(),
     mockGenerateExamples: vi.fn(),
     mockSession: {
         user: {
@@ -40,6 +41,7 @@ vi.mock('@/lib/prisma', () => ({
 
 vi.mock('@/lib/vocab/dictionary', () => ({
     lookupWord: mocks.mockLookupWord,
+    lookupOxford: mocks.mockLookupOxford,
 }));
 
 vi.mock('@/lib/ai', () => ({
@@ -77,6 +79,9 @@ const baseEntry = {
     oxford: null,
     tags: null,
     exchange: null,
+    oxfordHtml: null,
+    oxfordExamples: null,
+    dictSource: null,
     sentence: null,
     note: null,
     aiExamples: null,
@@ -118,9 +123,15 @@ describe('/api/vocab', () => {
     describe('POST 添加', () => {
         const validBody = { subjectId: 'subject-1', word: '  Abandon  ' };
 
-        it('词典命中：归一小写保存并回填词典字段', async () => {
+        it('牛津命中：回填牛津字段且 dictSource=oxford，ECDICT 补词形/标签', async () => {
             mocks.mockPrismaSubject.findUnique.mockResolvedValue(mockSubject);
             mocks.mockPrismaVocabEntry.findUnique.mockResolvedValue(null);
+            mocks.mockLookupOxford.mockReturnValue({
+                word: 'abandon', phonetic: '/əˈbændən/',
+                html: '<div class="entry">oxford</div>',
+                examples: [{ en: 'The baby had been abandoned.', zh: '婴儿被遗弃了。' }],
+                summary: '离弃，遗弃，抛弃',
+            });
             mocks.mockLookupWord.mockReturnValue({
                 word: 'abandon', phonetic: "ə'bændən", translation: 'vt. 放弃',
                 definition: 'v. forsake', pos: 'v:100', collins: 2, oxford: 1,
@@ -138,14 +149,46 @@ describe('/api/vocab', () => {
 
             expect(res.status).toBe(201);
             expect(data.word).toBe('abandon'); // 归一小写
-            expect(data.phonetic).toBe("ə'bændən");
-            expect(data.collins).toBe(2);
+            expect(data.phonetic).toBe('/əˈbændən/'); // 牛津音标优先
+            expect(data.translation).toBe('离弃，遗弃，抛弃'); // 牛津摘要优先
+            expect(data.oxfordHtml).toContain('oxford');
+            expect(JSON.parse(data.oxfordExamples)).toHaveLength(1);
+            expect(data.dictSource).toBe('oxford');
+            expect(data.collins).toBe(2); // ECDICT 补充
+            expect(data.exchange).toBe('i:abandoning');
             expect(mocks.mockLookupWord).toHaveBeenCalledWith('abandon');
         });
 
-        it('词典未命中：仍保存词条（字段为空）', async () => {
+        it('牛津未命中 ECDICT 命中：dictSource=ecdict', async () => {
             mocks.mockPrismaSubject.findUnique.mockResolvedValue(mockSubject);
             mocks.mockPrismaVocabEntry.findUnique.mockResolvedValue(null);
+            mocks.mockLookupOxford.mockReturnValue(null);
+            mocks.mockLookupWord.mockReturnValue({
+                word: 'zzzqqx', phonetic: 'fəʊ', translation: 'n. 生僻词',
+                definition: null, pos: null, collins: null, oxford: null,
+                tags: null, exchange: null,
+            });
+            mocks.mockPrismaVocabEntry.create.mockImplementation(({ data }) => Promise.resolve({ ...baseEntry, ...data }));
+
+            const req = new Request('http://localhost/api/vocab', {
+                method: 'POST',
+                body: JSON.stringify({ subjectId: 'subject-1', word: 'zzzqqx' }),
+                headers: { 'content-type': 'application/json' },
+            });
+            const res = await POST(req);
+            const data = await res.json();
+
+            expect(res.status).toBe(201);
+            expect(data.phonetic).toBe('fəʊ');
+            expect(data.translation).toBe('n. 生僻词');
+            expect(data.oxfordHtml).toBeNull();
+            expect(data.dictSource).toBe('ecdict');
+        });
+
+        it('两源均未命中：仍保存词条（字段为空）', async () => {
+            mocks.mockPrismaSubject.findUnique.mockResolvedValue(mockSubject);
+            mocks.mockPrismaVocabEntry.findUnique.mockResolvedValue(null);
+            mocks.mockLookupOxford.mockReturnValue(null);
             mocks.mockLookupWord.mockReturnValue(null);
             mocks.mockPrismaVocabEntry.create.mockImplementation(({ data }) => Promise.resolve({ ...baseEntry, ...data }));
 
@@ -160,6 +203,7 @@ describe('/api/vocab', () => {
             expect(res.status).toBe(201);
             expect(data.word).toBe('zzzqqx');
             expect(data.phonetic).toBeNull();
+            expect(data.dictSource).toBeNull();
         });
 
         it('重复词条返回 409', async () => {

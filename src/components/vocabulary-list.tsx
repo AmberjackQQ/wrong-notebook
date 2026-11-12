@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Loader2, Search, Sparkles, Trash2 } from "lucide-react";
+import { BookOpen, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Loader2, Search, Sparkles, Trash2 } from "lucide-react";
 
 import { PaginatedResponse, VocabularyEntry } from "@/types/api";
 import { apiClient } from "@/lib/api-client";
@@ -46,10 +46,10 @@ function parseExchange(exchange: string | null | undefined): ExchangeItem[] {
         .map(({ key }) => ({ key, value: map.get(key)!.join(" / ") }));
 }
 
-function parseAiExamples(aiExamples: string | null | undefined): { en: string; zh: string }[] {
-    if (!aiExamples) return [];
+function parseExamplesJson(json: string | null | undefined): { en: string; zh: string }[] {
+    if (!json) return [];
     try {
-        const parsed = JSON.parse(aiExamples);
+        const parsed = JSON.parse(json);
         return Array.isArray(parsed) ? parsed : [];
     } catch {
         return [];
@@ -84,6 +84,7 @@ export function VocabularyList({ subjectId, refreshKey = 0 }: VocabularyListProp
     const [search, setSearch] = useState("");
     const [loading, setLoading] = useState(true);
     const [expandedId, setExpandedId] = useState<string | null>(null);
+    const [htmlOpenId, setHtmlOpenId] = useState<string | null>(null);
     const [generatingId, setGeneratingId] = useState<string | null>(null);
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -173,7 +174,8 @@ export function VocabularyList({ subjectId, refreshKey = 0 }: VocabularyListProp
                 <div className="space-y-2">
                     {entries.map((entry) => {
                         const expanded = expandedId === entry.id;
-                        const aiExamples = parseAiExamples(entry.aiExamples);
+                        const aiExamples = parseExamplesJson(entry.aiExamples);
+                        const oxfordExamples = parseExamplesJson(entry.oxfordExamples);
                         const exchangeItems = parseExchange(entry.exchange);
                         const posText = formatPos(entry.pos);
                         return (
@@ -226,6 +228,41 @@ export function VocabularyList({ subjectId, refreshKey = 0 }: VocabularyListProp
                                         )}
                                         {posText && (
                                             <p className="text-muted-foreground">{posText}</p>
+                                        )}
+                                        {oxfordExamples.length > 0 && (
+                                            <div className="rounded-md border border-amber-200 bg-amber-50 dark:border-amber-900/60 dark:bg-amber-950/40 p-3">
+                                                <p className="text-xs font-medium text-amber-700 dark:text-amber-400 mb-1.5">{v?.oxfordExamplesTitle || "牛津例句"}</p>
+                                                <ul className="space-y-1.5 list-disc list-inside">
+                                                    {oxfordExamples.map((ex, i) => (
+                                                        <li key={i}>
+                                                            {ex.en}
+                                                            <span className="block text-muted-foreground text-xs">{ex.zh}</span>
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            </div>
+                                        )}
+                                        {entry.oxfordHtml && (
+                                            <div>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="h-7 text-xs"
+                                                    onClick={() => setHtmlOpenId(htmlOpenId === entry.id ? null : entry.id)}
+                                                >
+                                                    <BookOpen className="mr-1 h-3 w-3" />
+                                                    {htmlOpenId === entry.id
+                                                        ? (v?.hideOxfordEntry || "收起")
+                                                        : (v?.showOxfordEntry || "展开")}
+                                                    {v?.oxfordFullEntry || "完整牛津释义"}
+                                                </Button>
+                                                {htmlOpenId === entry.id && (
+                                                    <div
+                                                        className="oxford-html mt-2 rounded-md border p-3 bg-background"
+                                                        dangerouslySetInnerHTML={{ __html: entry.oxfordHtml }}
+                                                    />
+                                                )}
+                                            </div>
                                         )}
                                         {entry.translation && (
                                             <div>

@@ -5,7 +5,7 @@ import { authOptions } from "@/lib/auth";
 import { getServerSession } from "next-auth";
 import { unauthorized, badRequest, notFound, conflict, internalError } from "@/lib/api-errors";
 import { createLogger } from "@/lib/logger";
-import { lookupWord } from "@/lib/vocab/dictionary";
+import { lookupWord, lookupOxford } from "@/lib/vocab/dictionary";
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, MIN_PAGE_SIZE } from "@/lib/constants/pagination";
 
 const logger = createLogger('api:vocab');
@@ -78,7 +78,7 @@ export async function GET(req: Request) {
 /**
  * POST /api/vocab
  * 添加词汇：word 归一小写存储，唯一冲突返回 409；
- * 服务端查 ECDICT 词典回填解析字段（未命中时词条仍保存）
+ * 服务端查词典回填解析字段（牛津高阶10优先，ECDICT 补充/回退；未命中时词条仍保存）
  */
 export async function POST(req: Request) {
     const session = await getServerSession(authOptions);
@@ -129,22 +129,28 @@ export async function POST(req: Request) {
             return conflict(`"${normalizedWord}" already exists in this notebook`);
         }
 
-        // 词典查询缺失时优雅降级（返回 null），词条仍保存
+        // 词典查询缺失时优雅降级（返回 null），词条仍保存。
+        // 牛津优先：音标/完整 HTML/例句/中文摘要取牛津；词形变化与考试标签 ECDICT 才有
+        const oxford = lookupOxford(normalizedWord);
         const dict = lookupWord(normalizedWord);
+        const dictSource = oxford ? 'oxford' : dict ? 'ecdict' : null;
 
         const entry = await prisma.vocabularyEntry.create({
             data: {
                 userId: user.id,
                 subjectId,
                 word: normalizedWord,
-                phonetic: dict?.phonetic ?? null,
-                translation: dict?.translation ?? null,
+                phonetic: oxford?.phonetic ?? dict?.phonetic ?? null,
+                translation: oxford?.summary ?? dict?.translation ?? null,
                 definition: dict?.definition ?? null,
                 pos: dict?.pos ?? null,
                 collins: dict?.collins ?? null,
                 oxford: dict?.oxford ?? null,
                 tags: dict?.tags ?? null,
                 exchange: dict?.exchange ?? null,
+                oxfordHtml: oxford?.html ?? null,
+                oxfordExamples: oxford?.examples.length ? JSON.stringify(oxford.examples) : null,
+                dictSource,
                 sentence: sentence?.trim() || null,
                 note: note?.trim() || null,
             },

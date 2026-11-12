@@ -104,6 +104,11 @@ model VocabularyEntry {
   tags        String? // 考试标签：zk/gk/cet4/cet6/kaoyan/toefl/ielts/gre 空格分割
   exchange    String? // 词形变化：p:过去式/d:过去分词/i:现在分词/3:三单/s:复数/0:Lemma
 
+  // 牛津高阶第10版（oxford10.db 命中时填充；dictSource 标记主来源）
+  oxfordHtml     String? // 完整牛津词典 HTML（转换时已剥脚本/资源引用）
+  oxfordExamples String? // JSON [{en, zh}]，牛津例句
+  dictSource     String? // "oxford" | "ecdict"
+
   // 例句与笔记
   sentence   String? // 用户输入的例句
   aiExamples String? // JSON [{en, zh}]，AI 生成

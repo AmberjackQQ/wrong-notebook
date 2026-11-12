@@ -207,3 +207,92 @@ export function lookupWord(
     }
     return reverseLookupByExchange(db, table, normalized);
 }
+
+// ---------- 牛津高阶第10版（oxford10.db，由 scripts/mdx-to-sqlite.js 生成） ----------
+
+export interface OxfordExample {
+    en: string;
+    zh: string;
+}
+
+export interface OxfordEntry {
+    word: string;
+    phonetic: string | null;
+    html: string; // 完整词典 HTML（转换时已剥脚本/资源引用）
+    examples: OxfordExample[];
+    summary: string | null; // 中文释义摘要
+}
+
+export interface OxfordHandle {
+    db: Database.Database;
+}
+
+const globalOxford = globalThis as unknown as { __oxford?: OxfordHandle | null };
+
+function getOxford(): OxfordHandle | null {
+    if (globalOxford.__oxford !== undefined) return globalOxford.__oxford;
+    const file = path.join(process.cwd(), "dictionaries", "oxford10.db");
+    let handle: OxfordHandle | null = null;
+    if (existsSync(file)) {
+        try {
+            handle = { db: new Database(file, { readonly: true, fileMustExist: true }) };
+        } catch {
+            handle = null;
+        }
+    }
+    globalOxford.__oxford = handle;
+    return handle;
+}
+
+// 别名解析（alias 表含规范词与大小写/变体 key）→ 精确 → 小写 → 空白归一。
+// 后缀剥离/exchange 反查仍走 ECDICT 链，此处不重复实现
+export function lookupOxford(
+    raw: string,
+    dict: OxfordHandle | null = getOxford()
+): OxfordEntry | null {
+    if (!dict) return null;
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+    const keys = [trimmed];
+    const lower = trimmed.toLowerCase();
+    if (lower !== trimmed) keys.push(lower);
+    const normalized = lower.replace(/\s+/g, " ");
+    if (normalized !== lower) keys.push(normalized);
+
+    const resolve = dict.db.prepare("SELECT record_id FROM alias WHERE key = ?");
+    let recordId: number | undefined;
+    for (const key of keys) {
+        const row = resolve.get(key) as { record_id: number } | undefined;
+        if (row) {
+            recordId = row.record_id;
+            break;
+        }
+    }
+    if (recordId === undefined) return null;
+
+    const row = dict.db
+        .prepare(
+            "SELECT word, phonetic, html, examples, summary FROM entry WHERE record_id = ?"
+        )
+        .get(recordId) as
+        | { word: string; phonetic: string | null; html: string; examples: string | null; summary: string | null }
+        | undefined;
+    if (!row) return null;
+
+    let examples: OxfordExample[] = [];
+    if (row.examples) {
+        try {
+            const parsed = JSON.parse(row.examples);
+            if (Array.isArray(parsed)) examples = parsed;
+        } catch {
+            examples = [];
+        }
+    }
+    return {
+        word: row.word,
+        phonetic: row.phonetic ?? null,
+        html: row.html,
+        examples,
+        summary: row.summary ?? null,
+    };
+}

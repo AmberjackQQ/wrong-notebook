@@ -61,6 +61,39 @@ const TOKEN = process.argv[2];
         const hasAiBtn = await page.getByRole('button', { name: 'AI 生成例句' }).first().isVisible().catch(() => false);
         console.log(hasAiBtn ? 'PASS: 详情展开 + AI 生成例句按钮可见' : 'WARN: AI 按钮不可见');
 
+        // 5b. 牛津例句区块（amber 高亮）
+        const oxfordEx = page.getByText('牛津例句', { exact: true }).first();
+        await oxfordEx.waitFor({ timeout: 5000 }).catch(() => {});
+        if (await oxfordEx.isVisible().catch(() => false)) {
+            console.log('PASS: 牛津例句区块可见');
+            const blockText = await page.locator('div.border-amber-200').first().textContent();
+            console.log('  首条例句含中文翻译:', /遗弃|抛弃|放弃/.test(blockText) ? 'PASS' : 'WARN');
+        } else {
+            console.log('WARN: 牛津例句区块不可见');
+        }
+
+        // 5c. 完整牛津释义折叠块：展开后渲染 .oxford-html
+        const toggle = page.getByRole('button', { name: /完整牛津释义/ }).first();
+        await toggle.waitFor({ timeout: 5000 }).catch(() => {});
+        if (await toggle.isVisible().catch(() => false)) {
+            await toggle.click();
+            const oxfordHtml = page.locator('.oxford-html').first();
+            await oxfordHtml.waitFor({ timeout: 5000 });
+            const html = await oxfordHtml.innerHTML();
+            const checks = {
+                词头: /headword/.test(html),
+                音标块: /phons_/.test(html),
+                义项: /class="sense"|senses_/.test(html),
+                中文释义: /<chn>|<deft>/i.test(html),
+            };
+            for (const [k, ok] of Object.entries(checks)) console.log(ok ? `PASS: 牛津排版含${k}` : `WARN: 牛津排版缺${k}`);
+            console.log('PASS: 完整牛津释义展开渲染');
+            await toggle.click();
+            await page.waitForTimeout(300);
+        } else {
+            console.log('WARN: 完整牛津释义按钮不可见');
+        }
+
         // 6. 删除词条（confirm 自动 accept）
         const delBtn = page.locator('div.cursor-pointer', { hasText: 'abandon' }).first().locator('button').last();
         await delBtn.click();
