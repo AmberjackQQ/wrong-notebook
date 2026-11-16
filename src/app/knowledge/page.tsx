@@ -299,7 +299,6 @@ export default function KnowledgePage() {
                     open={uploadOpen}
                     onOpenChange={setUploadOpen}
                     subjects={subjects}
-                    defaultSubjectId={subjectFilter !== "all" && subjectFilter !== "none" ? subjectFilter : undefined}
                     onUploaded={fetchDocs}
                 />
 

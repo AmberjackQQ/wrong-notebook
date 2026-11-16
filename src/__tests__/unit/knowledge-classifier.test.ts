@@ -90,6 +90,33 @@ describe('matchSubjectId', () => {
         expect(matchSubjectId('数学', [])).toBeNull();
         expect(matchSubjectId('', SUBJECTS)).toBeNull();
     });
+
+    it('证据强度：文件名「化学」胜过正文多次提及「物理」（物理性质类常见词）', () => {
+        const subjects = [
+            { id: 's-phys', name: '物理' },
+            { id: 's-chem', name: '化学' },
+        ];
+        const text = '第一章 物理变化与物理性质。物质的物理性质包括颜色、气味。物理变化没有生成新物质。';
+        expect(matchSubjectId(text, subjects, '化学必修第一册.pdf')).toBe('s-chem');
+    });
+
+    it('证据强度：正文同时提到物理与化学、均不在文件名时，按正文出现次数定胜负', () => {
+        const subjects = [
+            { id: 's-phys', name: '物理' },
+            { id: 's-chem', name: '化学' },
+        ];
+        const text = '本册探讨化学反应原理，化学实验安全须知，化学方程式配平方法。';
+        expect(matchSubjectId(text, subjects, '讲义.pdf')).toBe('s-chem');
+    });
+
+    it('证据强度：枚举归一按关键词出现强度取最强枚举（英文正文命中中文学科）', () => {
+        const subjects = [
+            { id: 's-phys', name: '物理' },
+            { id: 's-chem', name: '化学' },
+        ];
+        const text = 'chemistry basics: chemistry lab safety and chemistry bonding';
+        expect(matchSubjectId(text, subjects, '')).toBe('s-chem');
+    });
 });
 
 describe('classifyKnowledgeDoc', () => {

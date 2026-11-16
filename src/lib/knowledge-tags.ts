@@ -52,25 +52,68 @@ export function calculateGradeNumber(
     return null;
 }
 
+export type SubjectEnum =
+    | 'math'
+    | 'physics'
+    | 'chemistry'
+    | 'biology'
+    | 'english'
+    | 'chinese'
+    | 'history'
+    | 'geography'
+    | 'politics';
+
+// 顺序即 inferSubjectFromName 的判定优先级（同名命中多个时取靠前者）
+const SUBJECT_KEYWORDS: Array<[SubjectEnum, string[]]> = [
+    ['math', ['math', '数学']],
+    ['physics', ['physics', '物理']],
+    ['chemistry', ['chemistry', '化学']],
+    ['biology', ['biology', '生物']],
+    ['english', ['english', '英语']],
+    ['chinese', ['chinese', '语文']],
+    ['history', ['history', '历史']],
+    ['geography', ['geography', '地理']],
+    ['politics', ['politics', '政治']],
+];
+
+export function countOccurrences(haystack: string, needle: string): number {
+    if (!haystack || !needle) return 0;
+    let count = 0;
+    let idx = haystack.indexOf(needle);
+    while (idx !== -1) {
+        count += 1;
+        idx = haystack.indexOf(needle, idx + needle.length);
+    }
+    return count;
+}
+
 /**
  * 从错题本名称推断学科
  * @param subjectName 错题本名称
  * @returns 学科标识
  */
-export function inferSubjectFromName(subjectName: string | null): 'math' | 'physics' | 'chemistry' | 'biology' | 'english' | 'chinese' | 'history' | 'geography' | 'politics' | null {
+export function inferSubjectFromName(subjectName: string | null): SubjectEnum | null {
     if (!subjectName) return null;
 
     const lowerName = subjectName.toLowerCase();
 
-    if (lowerName.includes('math') || lowerName.includes('数学')) return 'math';
-    if (lowerName.includes('physics') || lowerName.includes('物理')) return 'physics';
-    if (lowerName.includes('chemistry') || lowerName.includes('化学')) return 'chemistry';
-    if (lowerName.includes('biology') || lowerName.includes('生物')) return 'biology';
-    if (lowerName.includes('english') || lowerName.includes('英语')) return 'english';
-    if (lowerName.includes('chinese') || lowerName.includes('语文')) return 'chinese';
-    if (lowerName.includes('history') || lowerName.includes('历史')) return 'history';
-    if (lowerName.includes('geography') || lowerName.includes('地理')) return 'geography';
-    if (lowerName.includes('politics') || lowerName.includes('政治')) return 'politics';
+    for (const [subject, keywords] of SUBJECT_KEYWORDS) {
+        if (keywords.some((kw) => lowerName.includes(kw))) {
+            return subject;
+        }
+    }
 
     return null;
+}
+
+/**
+ * 统计文本中各学科关键词的出现次数（文件名/正文证据强度用）
+ */
+export function countSubjectEnumMentions(text: string): Record<SubjectEnum, number> {
+    const lower = (text || '').toLowerCase();
+    const counts = {} as Record<SubjectEnum, number>;
+    for (const [subject, keywords] of SUBJECT_KEYWORDS) {
+        counts[subject] = keywords.reduce((sum, kw) => sum + countOccurrences(lower, kw), 0);
+    }
+    return counts;
 }

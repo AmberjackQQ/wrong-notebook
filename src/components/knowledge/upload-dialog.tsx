@@ -33,11 +33,10 @@ interface UploadDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     subjects: Notebook[];
-    defaultSubjectId?: string;
     onUploaded: () => void;
 }
 
-export function UploadDialog({ open, onOpenChange, subjects, defaultSubjectId, onUploaded }: UploadDialogProps) {
+export function UploadDialog({ open, onOpenChange, subjects, onUploaded }: UploadDialogProps) {
     const { t } = useLanguage();
     const k = t.knowledge;
     const [files, setFiles] = useState<File[]>([]);
@@ -53,10 +52,10 @@ export function UploadDialog({ open, onOpenChange, subjects, defaultSubjectId, o
             setFiles([]);
             setDisplayName("");
             setDocType("auto");
-            setSubjectId(defaultSubjectId || "auto");
+            setSubjectId("auto");
             setProgress({ current: 0, total: 0 });
         }
-    }, [open, defaultSubjectId]);
+    }, [open]);
 
     const stripPdfExt = (name: string) => name.replace(/\.pdf$/i, "");
 

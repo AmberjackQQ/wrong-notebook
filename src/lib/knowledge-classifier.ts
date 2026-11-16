@@ -2,7 +2,7 @@
 // 任何失败都不抛错，保证上传流程不被分类阻断
 import { getAIService } from "./ai";
 import { KNOWLEDGE_DOC_TYPES, type KnowledgeDocType } from "./knowledge-storage";
-import { inferSubjectFromName } from "./knowledge-tags";
+import { countOccurrences, countSubjectEnumMentions, inferSubjectFromName, type SubjectEnum } from "./knowledge-tags";
 import { createLogger } from "./logger";
 
 const logger = createLogger('knowledge-classifier');
@@ -55,29 +55,48 @@ export function inferDocTypeFromText(text: string): KnowledgeDocType | null {
 }
 
 /**
- * 从文本（文件名/正文）中匹配用户的学科。
- * 两级：1) 文本包含某学科名整词（"数学" 匹配学科 "数学"）；
- *      2) 经 inferSubjectFromName 枚举归一（"Math" / "英语" → 'english' 等）后比对
+ * 从文本（正文 + 文件名）中匹配用户的学科。
+ * 两级，均按证据强度打分（文件名 ×10 + 正文 ×1），而非遍历顺序：
+ *  1) 学科名出现次数直接计分（"化学必修一" 文件名命中「化学」远比正文顺带提到「物理」有说服力）
+ *  2) 经 inferSubjectFromName 枚举归一（"Math" / "英语" → 'english' 等）后比对，
+ *     取关键词出现强度最高的枚举，避免"物理性质"抢走化学教材
+ * 平手时更长的学科名优先（"计算机科学" 胜过 "科学"）
  */
-export function matchSubjectId(text: string, subjects: UserSubjectRef[]): string | null {
-    if (!text || subjects.length === 0) return null;
-    const lower = text.toLowerCase();
+export function matchSubjectId(text: string, subjects: UserSubjectRef[], filename = ''): string | null {
+    if ((!text && !filename) || subjects.length === 0) return null;
+    const lowerText = (text || '').toLowerCase();
+    const lowerFilename = (filename || '').toLowerCase();
 
-    // 1. 直接包含学科名（长名优先，避免"科学"抢匹配"计算机科学"）
-    const sorted = [...subjects].sort((a, b) => b.name.length - a.name.length);
-    for (const s of sorted) {
-        if (s.name && lower.includes(s.name.toLowerCase())) {
-            return s.id;
-        }
+    // 1. 学科名出现次数计分
+    const named = subjects
+        .filter((s) => s.name)
+        .map((s) => {
+            const kw = s.name.toLowerCase();
+            return {
+                id: s.id,
+                score: 10 * countOccurrences(lowerFilename, kw) + countOccurrences(lowerText, kw),
+                length: s.name.length,
+            };
+        })
+        .filter((x) => x.score > 0)
+        .sort((a, b) => b.score - a.score || b.length - a.length);
+    if (named.length > 0) {
+        return named[0].id;
     }
 
-    // 2. 枚举归一比对：文本能推断出学科枚举，且某学科名也能推断出同一枚举
-    const textEnum = inferSubjectFromName(text);
-    if (textEnum) {
-        for (const s of sorted) {
-            if (inferSubjectFromName(s.name) === textEnum) {
-                return s.id;
-            }
+    // 2. 枚举归一比对：文本关键词强度最高的学科枚举，对应用户学科名可推断出同一枚举者
+    const textCounts = countSubjectEnumMentions(lowerText);
+    const filenameCounts = countSubjectEnumMentions(lowerFilename);
+    const bestEnum = (Object.keys(textCounts) as SubjectEnum[])
+        .map((e) => ({ e, score: 10 * filenameCounts[e] + textCounts[e] }))
+        .filter((x) => x.score > 0)
+        .sort((a, b) => b.score - a.score)[0]?.e;
+    if (bestEnum) {
+        const withEnum = subjects
+            .filter((s) => s.name && inferSubjectFromName(s.name) === bestEnum)
+            .sort((a, b) => b.name.length - a.name.length);
+        if (withEnum.length > 0) {
+            return withEnum[0].id;
         }
     }
 
@@ -135,7 +154,7 @@ export async function classifyKnowledgeDoc(
     } else {
         const combined = `${filename}\n${text}`;
         docType = inferDocTypeFromText(combined);
-        subjectId = matchSubjectId(combined, subjects);
+        subjectId = matchSubjectId(text, subjects, filename);
         if (docType || subjectId) method = 'heuristic';
     }
 
