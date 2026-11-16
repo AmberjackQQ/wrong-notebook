@@ -712,6 +712,15 @@ function HomeContent() {
                     <UserWelcome />
 
                     <div className="flex items-center gap-2 bg-card p-2 rounded-lg border shadow-sm shrink-0">
+                        <Link href="/knowledge">
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                title={t.knowledge?.title || '知识库'}
+                            >
+                                <BookOpen className="h-5 w-5" />
+                            </Button>
+                        </Link>
                         <BroadcastNotification />
                         <SettingsDialog />
                         <Button

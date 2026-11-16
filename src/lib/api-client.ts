@@ -71,10 +71,41 @@ async function request<T>(url: string, options: RequestOptions = {}): Promise<T>
     }
 }
 
+// multipart 上传：不能走 request()，其默认 Content-Type: application/json 会破坏 FormData boundary
+async function uploadRequest<T>(url: string, data: FormData, timeout: number): Promise<T> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+    try {
+        const res = await fetch(url, { method: 'POST', body: data, signal: controller.signal });
+        clearTimeout(timeoutId);
+        if (!res.ok) {
+            let errorData;
+            try {
+                errorData = await res.json();
+            } catch {
+                errorData = await res.text();
+            }
+            throw new ApiError(res.status, res.statusText, errorData);
+        }
+        try {
+            return await res.json();
+        } catch {
+            return {} as T;
+        }
+    } catch (error) {
+        clearTimeout(timeoutId);
+        if (error instanceof Error && error.name === 'AbortError') {
+            throw new ApiError(408, 'Request Timeout', { message: 'AI_TIMEOUT_ERROR' });
+        }
+        throw error;
+    }
+}
+
 export const apiClient = {
     get: <T>(url: string, options?: RequestOptions) => request<T>(url, { ...options, method: 'GET' }),
     post: <TResponse, TBody = any>(url: string, body: TBody, options?: RequestOptions) => request<TResponse>(url, { ...options, method: 'POST', body: JSON.stringify(body) }),
     put: <TResponse, TBody = any>(url: string, body: TBody, options?: RequestOptions) => request<TResponse>(url, { ...options, method: 'PUT', body: JSON.stringify(body) }),
     patch: <TResponse, TBody = any>(url: string, body: TBody, options?: RequestOptions) => request<TResponse>(url, { ...options, method: 'PATCH', body: JSON.stringify(body) }),
     delete: <T>(url: string, options?: RequestOptions) => request<T>(url, { ...options, method: 'DELETE' }),
+    upload: <T>(url: string, data: FormData, timeout = 600000) => uploadRequest<T>(url, data, timeout),
 };

@@ -31,6 +31,7 @@ model User {
   practiceRecords PracticeRecord[]
   customTags KnowledgeTag[] // User's custom tags
   questionSources QuestionSource[] // User's custom question sources
+  knowledgeDocs KnowledgeDoc[] // 知识库文档
 }
 
 // 统一知识点标签表 (支持无限层级)
@@ -76,11 +77,32 @@ model Subject {
 
   errorItems   ErrorItem[]
   vocabEntries VocabularyEntry[]
+  knowledgeDocs KnowledgeDoc[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@unique([name, userId])
+}
+
+// 知识库 PDF 文档（文件存磁盘 data/uploads/knowledge，库存元数据）
+model KnowledgeDoc {
+  id String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subjectId String?
+  subject   Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull) // 删学科退回未分类
+
+  filename    String // 原始文件名（只存库，不进文件路径）
+  storageName String // 磁盘存储名（服务端生成的 uuid.pdf，同 userId 下唯一）
+  displayName String // 显示名，默认 = filename，可改
+  docType     String // "textbook" | "guide" | "exercise" | "exam"
+  size        Int    // 字节数
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, subjectId, createdAt])
 }
 
 // 英语词汇本中的词条（词典数据来自 ECDICT 开源词典，MIT 许可）

@@ -49,6 +49,20 @@ export interface Notebook {
     };
 }
 
+// 知识库 PDF 文档元数据（文件内容经 /api/knowledge/[id]/file 流式获取）
+export interface KnowledgeDoc {
+    id: string;
+    userId: string;
+    filename: string;
+    displayName: string;
+    docType: string; // "textbook" | "guide" | "exercise" | "exam"
+    size: number; // 字节数
+    subjectId: string | null;
+    subject?: { id: string; name: string } | null;
+    createdAt: string;
+    updatedAt: string;
+}
+
 // 英语词汇词条（词典字段来自 ECDICT，查词未命中时为空）
 export interface VocabularyEntry {
     id: string;

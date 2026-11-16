@@ -76,6 +76,8 @@ upload_test_output*.txt
 
 # data
 #/data/
+# 知识库 PDF 上传文件（Docker 卷内用户数据，不入库）
+/data/uploads/
 .next-prebuilt/
 
 certificates
