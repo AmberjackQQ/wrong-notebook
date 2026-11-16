@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { authOptions } from "@/lib/auth";
 import { getServerSession } from "next-auth";
 import { unauthorized, internalError } from "@/lib/api-errors";
@@ -136,32 +136,60 @@ export async function GET(req: Request) {
             where: whereClause,
         });
 
-        // 分页查询
-        const errorItems = await prisma.errorItem.findMany({
+        // questionText 可能内联 OCR 识别出的 base64 图片（单个 data URL 可达数百 KB），
+        // answerImages/analysisImages 以 base64 内联存储时单页可达数 MB。
+        // 列表卡片只用它们做存在性判断（OCR/解析/答题徽章），full=0 时一律不查大字段，
+        // 徽章改由服务端算好布尔标记返回；打印预览等需要渲染完整题目的调用方传 full=1
+        const wantFull = searchParams.get("full") === "1";
+
+        const listArgs = {
             where: whereClause,
-            orderBy: {
-                [sortBy]: sortOrder as "asc" | "desc",
-            },
-            include: {
-                subject: true,
-                tags: true,
-            },
+            orderBy: { [sortBy]: sortOrder as "asc" | "desc" },
             skip: (page - 1) * pageSize,
             take: pageSize,
-        });
+        };
+        const errorItems = wantFull
+            ? await prisma.errorItem.findMany({ ...listArgs, include: { subject: true, tags: true } })
+            : await prisma.errorItem.findMany({
+                  ...listArgs,
+                  select: {
+                      id: true,
+                      masteryLevel: true,
+                      mistakeStatus: true,
+                      customMistakeStatus: true,
+                      questionNumber: true,
+                      paperLevel: true,
+                      printCount: true,
+                      questionText: true,
+                      knowledgePoints: true,
+                      createdAt: true,
+                      subject: { select: { id: true, name: true, type: true } },
+                      tags: { select: { id: true, name: true } },
+                  },
+              });
 
-        // questionText 可能内联 OCR 识别出的 base64 图片（单个 data URL 可达数百 KB），
-        // wrongAnswerText 同理（编辑时可粘贴/截图图片，以 Markdown 图片行内联存储）。
-        // 列表页只用它们做非空判断/搜索（搜索走数据库端 contains），默认截断避免分页响应体膨胀；
-        // 打印预览等需要渲染完整题目的调用方传 full=1
-        const wantFull = searchParams.get("full") === "1";
-        const items = wantFull
-            ? errorItems
-            : errorItems.map((item) => ({
-                  ...item,
-                  questionText: (item.questionText || '').slice(0, 200),
-                  wrongAnswerText: (item.wrongAnswerText || '').slice(0, 200),
-              }));
+        let items;
+        if (wantFull) {
+            items = errorItems;
+        } else {
+            // 徽章存在性判断在库端完成（"[]" 长度为 2，>2 即有内容），不回传图片 base64
+            const ids = errorItems.map((item) => item.id);
+            const flagRows = ids.length
+                ? (await prisma.$queryRaw<
+                      { id: string; hasAnalysis: number; hasAnswer: number }[]
+                  >`SELECT id,
+                         (LENGTH(analysis) > 0 OR LENGTH(analysisImages) > 2) AS hasAnalysis,
+                         (LENGTH(answerText) > 0 OR LENGTH(answerImages) > 2) AS hasAnswer
+                     FROM ErrorItem WHERE id IN (${Prisma.join(ids)})`)
+                : [];
+            const flagMap = new Map(flagRows.map((row) => [row.id, row]));
+            items = errorItems.map((item) => ({
+                ...item,
+                questionText: (item.questionText || '').slice(0, 200),
+                hasAnalysis: Boolean(Number(flagMap.get(item.id)?.hasAnalysis ?? 0)),
+                hasAnswer: Boolean(Number(flagMap.get(item.id)?.hasAnswer ?? 0)),
+            }));
+        }
 
         const totalPages = Math.ceil(total / pageSize);
 

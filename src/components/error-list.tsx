@@ -683,38 +683,12 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
                                                     OCR
                                                 </Badge>
                                             )}
-                                            {(() => {
-                                                // 检查是否有解析内容（文本或图片）
-                                                const hasAnalysisText = (item.analysis?.trim() || '').length > 0;
-                                                let hasAnalysisImages = false;
-                                                if (item.analysisImages) {
-                                                    try {
-                                                        const images = JSON.parse(item.analysisImages);
-                                                        hasAnalysisImages = Array.isArray(images) && images.length > 0;
-                                                    } catch (e) {
-                                                        hasAnalysisImages = false;
-                                                    }
-                                                }
-                                                return hasAnalysisText || hasAnalysisImages;
-                                            })() && (
+                                            {item.hasAnalysis && (
                                                 <Badge variant="outline" className="text-xs bg-blue-50 border-blue-200 text-blue-700">
                                                     解析
                                                 </Badge>
                                             )}
-                                            {(() => {
-                                                // 检查是否有答案内容（文本或图片）
-                                                const hasAnswerText = (item.answerText?.trim() || '').length > 0;
-                                                let hasAnswerImages = false;
-                                                if (item.answerImages) {
-                                                    try {
-                                                        const images = JSON.parse(item.answerImages);
-                                                        hasAnswerImages = Array.isArray(images) && images.length > 0;
-                                                    } catch (e) {
-                                                        hasAnswerImages = false;
-                                                    }
-                                                }
-                                                return hasAnswerText || hasAnswerImages;
-                                            })() && (
+                                            {item.hasAnswer && (
                                                 <Badge variant="outline" className="text-xs bg-green-50 border-green-200 text-green-700">
                                                     答题一
                                                 </Badge>

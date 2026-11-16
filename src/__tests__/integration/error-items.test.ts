@@ -26,6 +26,7 @@ const mocks = vi.hoisted(() => ({
     mockPrismaSubject: {
         findUnique: vi.fn(),
     },
+    mockQueryRaw: vi.fn(),
     mockSession: {
         user: {
             email: 'user@example.com',
@@ -42,6 +43,7 @@ vi.mock('@/lib/prisma', () => ({
         errorItem: mocks.mockPrismaErrorItem,
         knowledgeTag: mocks.mockPrismaKnowledgeTag,
         subject: mocks.mockPrismaSubject,
+        $queryRaw: mocks.mockQueryRaw,
     },
 }));
 
@@ -81,6 +83,9 @@ describe('/api/error-items', () => {
         vi.clearAllMocks();
         mocks.mockPrismaUser.findUnique.mockResolvedValue(mockUser);
         vi.mocked(getServerSession).mockResolvedValue(mocks.mockSession);
+
+        // Default: 列表徽章存在性 raw 查询返回空（布尔标记为 false）
+        mocks.mockQueryRaw.mockResolvedValue([]);
 
         // Default: subject not found (handle null case)
         mocks.mockPrismaSubject.findUnique.mockResolvedValue(null);
@@ -581,6 +586,59 @@ describe('/api/error-items', () => {
                     }),
                 })
             );
+        });
+
+        it('默认瘦身查询：使用 select 不查大字段，并用 raw 查询计算徽章标记', async () => {
+            mocks.mockPrismaErrorItem.count.mockResolvedValue(2);
+            mocks.mockPrismaErrorItem.findMany.mockResolvedValue([
+                { id: 'q1', questionText: 'x'.repeat(500), masteryLevel: 0 },
+                { id: 'q2', questionText: '题目2', masteryLevel: 1 },
+            ]);
+            mocks.mockQueryRaw.mockResolvedValue([
+                { id: 'q1', hasAnalysis: 1, hasAnswer: 0 },
+                { id: 'q2', hasAnalysis: 0, hasAnswer: 1 },
+            ]);
+
+            const request = new Request('http://localhost/api/error-items/list');
+            const response = await GET_LIST(request);
+            const data = await response.json();
+
+            expect(response.status).toBe(200);
+            // findMany 用 select（不含大字段），不是 include 全量
+            expect(mocks.mockPrismaErrorItem.findMany).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    select: expect.objectContaining({
+                        id: true,
+                        questionText: true,
+                    }),
+                })
+            );
+            const findManyArg = mocks.mockPrismaErrorItem.findMany.mock.calls[0][0];
+            expect(findManyArg.select).not.toHaveProperty('analysisImages');
+            expect(findManyArg.select).not.toHaveProperty('answerImages');
+            expect(findManyArg.select).not.toHaveProperty('originalImageUrl');
+            // 徽章标记来自 raw 查询并附加到条目；questionText 截断
+            expect(data.items[0]).toMatchObject({ id: 'q1', hasAnalysis: true, hasAnswer: false, questionText: expect.any(String) });
+            expect(data.items[0].questionText.length).toBeLessThanOrEqual(200);
+            expect(data.items[1]).toMatchObject({ id: 'q2', hasAnalysis: false, hasAnswer: true });
+        });
+
+        it('full=1 时返回完整字段（打印预览路径，不做瘦身）', async () => {
+            mocks.mockPrismaErrorItem.count.mockResolvedValue(1);
+            mocks.mockPrismaErrorItem.findMany.mockResolvedValue([
+                { id: 'q1', questionText: '完整题目', analysisImages: '[{...}]', subject: { id: 's1' }, tags: [] },
+            ]);
+
+            const request = new Request('http://localhost/api/error-items/list?full=1');
+            const response = await GET_LIST(request);
+            const data = await response.json();
+
+            expect(response.status).toBe(200);
+            expect(mocks.mockPrismaErrorItem.findMany).toHaveBeenCalledWith(
+                expect.objectContaining({ include: { subject: true, tags: true } })
+            );
+            expect(data.items[0].questionText).toBe('完整题目');
+            expect(mocks.mockQueryRaw).not.toHaveBeenCalled();
         });
     });
 

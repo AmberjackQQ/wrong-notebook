@@ -164,6 +164,8 @@ model ErrorItem {
   updatedAt        DateTime @updatedAt
 
   reviewSchedules ReviewSchedule[]
+
+  @@index([userId, subjectId, createdAt])
 }
 
 // 用户自定义题目来源

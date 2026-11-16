@@ -104,6 +104,8 @@ export interface ErrorItem {
     questionNumber?: string | null; // 题号
     printCount?: number | null; // 打印次数（用户手动维护 + 打印时勾选自增）
     answerTime?: string | null; // 答题时间
+    hasAnalysis?: boolean; // 列表瘦身标记：有解析内容（full=1 请求时不返回）
+    hasAnswer?: boolean; // 列表瘦身标记：有答题内容（full=1 请求时不返回）
 
     createdAt: string;
     updatedAt: string;
