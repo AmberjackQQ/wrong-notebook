@@ -226,6 +226,7 @@ export const translations = {
             filterAll: "All",
             filterUncategorized: "Uncategorized",
             docType: {
+                auto: "Auto-detect",
                 textbook: "Textbook",
                 guide: "Guide",
                 exercise: "Exercises",
@@ -233,6 +234,7 @@ export const translations = {
             },
             dialog: {
                 title: "Upload PDF Document",
+                subjectAuto: "Auto-match",
                 fileLabel: "PDF File",
                 chooseFile: "Choose File",
                 displayNameLabel: "Display Name",
@@ -1002,6 +1004,7 @@ export const translations = {
             filterAll: "全部",
             filterUncategorized: "未分类",
             docType: {
+                auto: "自动识别",
                 textbook: "教材",
                 guide: "教辅",
                 exercise: "练习题",
@@ -1009,6 +1012,7 @@ export const translations = {
             },
             dialog: {
                 title: "上传 PDF 文档",
+                subjectAuto: "自动匹配",
                 fileLabel: "PDF 文件",
                 chooseFile: "选择文件",
                 displayNameLabel: "显示名",

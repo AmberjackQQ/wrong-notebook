@@ -53,6 +53,30 @@ export const VocabExamplesSchema = z.object({
 export type VocabExamplesFromSchema = z.infer<typeof VocabExamplesSchema>;
 
 /**
+ * 文档分类结果（classifyDocument）：知识库 PDF 上传时判断文档类型与学科
+ */
+export const ClassifyDocumentSchema = z.object({
+    docType: z.enum(["textbook", "guide", "exercise", "exam"]),
+    subject: z.string().nullable(),
+});
+
+export type ClassifyDocumentFromSchema = z.infer<typeof ClassifyDocumentSchema>;
+
+/**
+ * 解析并校验 AI 返回的分类 XML（<result><docType/><subject/></result>）
+ * subject 为 "null"/空串时归一为 null；docType 非法时抛错由调用方兜底
+ */
+export function parseClassifyXml(text: string): ClassifyDocumentFromSchema {
+    const docType = text.match(/<docType>([\s\S]*?)<\/docType>/)?.[1]?.trim() ?? "";
+    const subjectRaw = text.match(/<subject>([\s\S]*?)<\/subject>/)?.[1]?.trim();
+    if (!docType && !subjectRaw) {
+        throw new Error("AI 未返回有效的分类结果");
+    }
+    const subject = !subjectRaw || subjectRaw.toLowerCase() === "null" ? null : subjectRaw;
+    return ClassifyDocumentSchema.parse({ docType, subject });
+}
+
+/**
  * 解析并校验 AI 返回的词汇例句 XML（<examples><example><en/><zh/></example></examples>）
  * 兼容 AI 漏掉外层 <examples> 标签的情况；无有效例句时抛错
  */

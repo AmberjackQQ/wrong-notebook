@@ -42,8 +42,8 @@ export function UploadDialog({ open, onOpenChange, subjects, defaultSubjectId, o
     const k = t.knowledge;
     const [files, setFiles] = useState<File[]>([]);
     const [displayName, setDisplayName] = useState("");
-    const [docType, setDocType] = useState<string>("textbook");
-    const [subjectId, setSubjectId] = useState<string>("none");
+    const [docType, setDocType] = useState<string>("auto");
+    const [subjectId, setSubjectId] = useState<string>("auto");
     const [uploading, setUploading] = useState(false);
     const [progress, setProgress] = useState({ current: 0, total: 0 });
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -52,8 +52,8 @@ export function UploadDialog({ open, onOpenChange, subjects, defaultSubjectId, o
         if (open) {
             setFiles([]);
             setDisplayName("");
-            setDocType("textbook");
-            setSubjectId(defaultSubjectId || "none");
+            setDocType("auto");
+            setSubjectId(defaultSubjectId || "auto");
             setProgress({ current: 0, total: 0 });
         }
     }, [open, defaultSubjectId]);
@@ -211,6 +211,9 @@ export function UploadDialog({ open, onOpenChange, subjects, defaultSubjectId, o
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
+                                    <SelectItem value="auto">
+                                        {k?.docType?.auto || "Auto-detect"}
+                                    </SelectItem>
                                     {DOC_TYPES.map((type) => (
                                         <SelectItem key={type} value={type}>
                                             {k?.docType?.[type] || type}
@@ -226,6 +229,9 @@ export function UploadDialog({ open, onOpenChange, subjects, defaultSubjectId, o
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
+                                    <SelectItem value="auto">
+                                        {k?.dialog?.subjectAuto || "Auto-match"}
+                                    </SelectItem>
                                     <SelectItem value="none">
                                         {k?.filterUncategorized || "Uncategorized"}
                                     </SelectItem>

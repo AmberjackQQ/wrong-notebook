@@ -1,8 +1,8 @@
 import OpenAI from "openai";
-import { AIService, ParsedQuestion, DifficultyLevel, AIConfig, ReanswerQuestionResult, GeogebraAnalysisResult, KnowledgeTagsOptions, VocabExamplesResult } from "./types";
-import { generateAnalyzePrompt, generateSimilarQuestionPrompt, generateGeogebraPrompt, generateKnowledgeTagsPrompt, generateVocabExamplesPrompt, getSubjectLabel } from './prompts';
+import { AIService, ParsedQuestion, DifficultyLevel, AIConfig, ReanswerQuestionResult, GeogebraAnalysisResult, KnowledgeTagsOptions, VocabExamplesResult, ClassifyDocumentResult } from "./types";
+import { generateAnalyzePrompt, generateSimilarQuestionPrompt, generateGeogebraPrompt, generateKnowledgeTagsPrompt, generateVocabExamplesPrompt, generateClassifyDocumentPrompt, getSubjectLabel } from './prompts';
 import { getAppConfig } from '../config';
-import { safeParseParsedQuestion, parseVocabExamplesXml } from './schema';
+import { safeParseParsedQuestion, parseVocabExamplesXml, parseClassifyXml } from './schema';
 import { getMathTagsFromDB, getTagsFromDB } from './tag-service';
 import { createLogger } from '../logger';
 import { normalizeMistakeStatusForSave } from '../mistake-status';
@@ -577,6 +577,29 @@ export class OpenAIProvider implements AIService {
             return parseVocabExamplesXml(text);
         } catch (error) {
             logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'Error during vocab examples generation');
+            this.handleError(error);
+            throw error;
+        }
+    }
+
+    async classifyDocument(filename: string, textExcerpt: string, subjectNames: string[]): Promise<ClassifyDocumentResult> {
+        const prompt = generateClassifyDocumentPrompt(filename, textExcerpt, subjectNames);
+
+        try {
+            const response = await this.openai.chat.completions.create({
+                model: this.model,
+                messages: [
+                    { role: "system", content: prompt },
+                    { role: "user", content: "请判断该文档的 docType 和 subject，只输出 <result> 标签内容。" }
+                ],
+                max_tokens: 128,
+            });
+
+            const text = response.choices[0]?.message?.content || '';
+            if (!text) throw new Error("Empty response from AI");
+            return parseClassifyXml(text);
+        } catch (error) {
+            logger.error({ error, filename }, 'Error during document classification');
             this.handleError(error);
             throw error;
         }

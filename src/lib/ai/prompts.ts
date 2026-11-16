@@ -762,3 +762,52 @@ export function generateVocabExamplesPrompt(
     user_sentence: options?.userSentence?.trim() || '（无）',
   }).trim();
 }
+
+/**
+ * 知识库文档分类提示词
+ * 上传 PDF 时判断文档类型（教材/教辅/练习题/试卷）与学科；
+ * 学科必须从候选列表中逐字选择，无法判断时输出 null
+ */
+export const DEFAULT_CLASSIFY_DOCUMENT_TEMPLATE = `【角色与核心任务 (ROLE AND CORE TASK)】
+你是一位熟悉中国中小学教学资料的教务助手，任务是根据文件名和文档内容片段，判断这份 PDF 文档属于什么学科和什么类型。
+
+【文件名 (FILENAME)】
+{{filename}}
+
+【文档内容片段 (CONTENT EXCERPT，可能为空)】
+{{text_excerpt}}
+
+【候选学科列表 (CANDIDATE SUBJECTS)】
+{{subject_names}}
+
+【判断规则 (RULES)】
+1. docType 只能是以下四个之一：
+   - textbook 教材/课本
+   - guide 教辅/辅导资料/总复习
+   - exercise 练习题/习题集/作业
+   - exam 试卷/真题/考试卷
+2. subject 必须从「候选学科列表」中逐字复制一个名称；如果列表中都匹配不上，或无法判断，输出 null。
+3. 综合文件名和内容片段判断；文件名通常含「数学」「期末」「试卷」等关键词，优先级最高。
+4. 内容片段可能为空（扫描版 PDF），此时仅凭文件名判断。
+
+【输出格式 (OUTPUT FORMAT)】
+你的响应必须严格遵循以下 XML 标签格式，不要输出其他任何文字：
+<result>
+<docType>textbook|guide|exercise|exam 之一</docType>
+<subject>候选学科列表中的名称或 null</subject>
+</result>`;
+
+/**
+ * 生成文档分类提示词
+ */
+export function generateClassifyDocumentPrompt(
+  filename: string,
+  textExcerpt: string,
+  subjectNames: string[]
+): string {
+  return replaceVariables(DEFAULT_CLASSIFY_DOCUMENT_TEMPLATE, {
+    filename,
+    text_excerpt: textExcerpt.trim() || '（无，仅凭文件名判断）',
+    subject_names: subjectNames.length > 0 ? subjectNames.join('、') : '（空，subject 一律输出 null）',
+  }).trim();
+}

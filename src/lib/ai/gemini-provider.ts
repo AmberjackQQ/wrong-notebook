@@ -1,7 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
-import { AIService, ParsedQuestion, DifficultyLevel, AIConfig, ReanswerQuestionResult, GeogebraAnalysisResult, KnowledgeTagsOptions, VocabExamplesResult } from "./types";
-import { generateAnalyzePrompt, generateSimilarQuestionPrompt, generateGeogebraPrompt, generateKnowledgeTagsPrompt, generateVocabExamplesPrompt, getSubjectLabel } from './prompts';
-import { safeParseParsedQuestion, parseVocabExamplesXml } from './schema';
+import { AIService, ParsedQuestion, DifficultyLevel, AIConfig, ReanswerQuestionResult, GeogebraAnalysisResult, KnowledgeTagsOptions, VocabExamplesResult, ClassifyDocumentResult } from "./types";
+import { generateAnalyzePrompt, generateSimilarQuestionPrompt, generateGeogebraPrompt, generateKnowledgeTagsPrompt, generateVocabExamplesPrompt, generateClassifyDocumentPrompt, getSubjectLabel } from './prompts';
+import { safeParseParsedQuestion, parseVocabExamplesXml, parseClassifyXml } from './schema';
 import { getAppConfig } from '../config';
 import { getMathTagsFromDB, getTagsFromDB } from './tag-service';
 import { createLogger } from '../logger';
@@ -468,6 +468,26 @@ export class GeminiProvider implements AIService {
             return parseVocabExamplesXml(text);
         } catch (error) {
             logger.error({ error, stack: error instanceof Error ? error.stack : undefined }, 'Error during vocab examples generation');
+            this.handleError(error);
+            throw error;
+        }
+    }
+
+    async classifyDocument(filename: string, textExcerpt: string, subjectNames: string[]): Promise<ClassifyDocumentResult> {
+        const prompt = generateClassifyDocumentPrompt(filename, textExcerpt, subjectNames);
+
+        try {
+            // 分类追求快：单次尝试，不走 3 次重试退避
+            const response = await this.retryOperation(() => this.ai.models.generateContent({
+                model: this.modelName,
+                contents: prompt
+            }), 1);
+
+            const text = response.text || '';
+            if (!text) throw new Error("Empty response from AI");
+            return parseClassifyXml(text);
+        } catch (error) {
+            logger.error({ error, filename }, 'Error during document classification');
             this.handleError(error);
             throw error;
         }

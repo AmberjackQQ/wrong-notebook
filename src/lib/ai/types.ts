@@ -34,6 +34,11 @@ export interface VocabExamplesResult {
     examples: { en: string; zh: string }[];
 }
 
+export interface ClassifyDocumentResult {
+    docType: 'textbook' | 'guide' | 'exercise' | 'exam';
+    subject: string | null; // 候选学科列表中的名称，无法判断时为 null
+}
+
 export interface AIService {
     analyzeImage(imageBase64: string, mimeType?: string, language?: 'zh' | 'en', grade?: 7 | 8 | 9 | 10 | 11 | 12 | null, subject?: string | null, gradeSemester?: string | null): Promise<ParsedQuestionFromSchema>;
     generateSimilarQuestion(originalQuestion: string, knowledgePoints: string[], language?: 'zh' | 'en', difficulty?: DifficultyLevel, gradeSemester?: string | null): Promise<ParsedQuestionFromSchema>;
@@ -41,6 +46,7 @@ export interface AIService {
     analyzeForGeogebra(questionText: string, answerText: string, analysis: string): Promise<GeogebraAnalysisResult>;
     suggestKnowledgeTags(questionText: string, options?: KnowledgeTagsOptions): Promise<string[]>;
     generateVocabExamples(word: string, sentence?: string): Promise<VocabExamplesResult>;
+    classifyDocument(filename: string, textExcerpt: string, subjectNames: string[]): Promise<ClassifyDocumentResult>;
 }
 
 export interface AIConfig {

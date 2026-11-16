@@ -6,6 +6,7 @@ import { unauthorized, badRequest, notFound, internalError } from "@/lib/api-err
 import { createLogger } from "@/lib/logger";
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, MIN_PAGE_SIZE } from "@/lib/constants/pagination";
 import { isValidPdfFilename, savePdf, deletePdf, KNOWLEDGE_DOC_TYPES } from "@/lib/knowledge-storage";
+import { classifyKnowledgeDoc } from "@/lib/knowledge-classifier";
 
 const logger = createLogger('api:knowledge');
 
@@ -127,15 +128,20 @@ export async function POST(req: Request) {
         }
 
         const docTypeRaw = String(form.get("docType") || "textbook");
-        if (!(DOC_TYPES as readonly string[]).includes(docTypeRaw)) {
+        // "auto" = 由 AI/启发式自动分类；其余须在白名单内
+        const wantsAutoDocType = docTypeRaw === "auto";
+        if (!wantsAutoDocType && !(DOC_TYPES as readonly string[]).includes(docTypeRaw)) {
             return badRequest("Invalid docType");
         }
 
         const subjectIdRaw = form.get("subjectId");
+        // "auto" = 自动匹配用户学科；"" = 显式未分类；具体 id = 手动指定
+        const subjectIdStr = subjectIdRaw ? String(subjectIdRaw).trim() : "";
+        const wantsAutoSubject = subjectIdStr === "auto";
         let subjectId: string | null = null;
-        if (subjectIdRaw && String(subjectIdRaw).trim()) {
+        if (!wantsAutoSubject && subjectIdStr) {
             const subject = await prisma.subject.findFirst({
-                where: { id: String(subjectIdRaw), userId: user.id },
+                where: { id: subjectIdStr, userId: user.id },
             });
             if (!subject) {
                 return notFound("Subject not found");
@@ -151,14 +157,37 @@ export async function POST(req: Request) {
         const storageName = await savePdf(user.id, data);
 
         try {
+            let finalDocType: string = docTypeRaw;
+            let finalSubjectId: string | null = subjectId;
+            let classificationMethod: string | undefined;
+
+            if (wantsAutoDocType || wantsAutoSubject) {
+                try {
+                    const subjects = await prisma.subject.findMany({
+                        where: { userId: user.id },
+                        select: { id: true, name: true },
+                    });
+                    const result = await classifyKnowledgeDoc(file.name, data, subjects);
+                    if (wantsAutoDocType) finalDocType = result.docType;
+                    if (wantsAutoSubject) finalSubjectId = result.subjectId;
+                    classificationMethod = result.method;
+                } catch (classifyError) {
+                    // 分类失败不阻断上传：auto 退默认值
+                    logger.warn({ error: classifyError }, 'Auto classification failed, using defaults');
+                    if (wantsAutoDocType) finalDocType = "textbook";
+                    if (wantsAutoSubject) finalSubjectId = null;
+                    classificationMethod = 'fallback';
+                }
+            }
+
             const doc = await prisma.knowledgeDoc.create({
                 data: {
                     userId: user.id,
-                    subjectId,
+                    subjectId: finalSubjectId,
                     filename: file.name,
                     storageName,
                     displayName,
-                    docType: docTypeRaw,
+                    docType: finalDocType,
                     size: file.size,
                 },
                 select: {
@@ -173,7 +202,7 @@ export async function POST(req: Request) {
                     subject: { select: { id: true, name: true } },
                 },
             });
-            return NextResponse.json(doc, { status: 201 });
+            return NextResponse.json({ ...doc, classification: classificationMethod ? { method: classificationMethod } : undefined }, { status: 201 });
         } catch (dbError) {
             await deletePdf(user.id, storageName).catch((e) => {
                 logger.warn({ error: e }, 'Failed to cleanup orphan pdf after create failure');

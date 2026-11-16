@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
     },
     mockPrismaSubject: {
         findFirst: vi.fn(),
+        findMany: vi.fn(),
     },
     mockPrismaKnowledgeDoc: {
         findFirst: vi.fn(),
@@ -25,6 +26,7 @@ const mocks = vi.hoisted(() => ({
     mockDeletePdf: vi.fn(),
     mockPdfExists: vi.fn(),
     mockOpenPdfStream: vi.fn(),
+    mockClassifyKnowledgeDoc: vi.fn(),
     mockSession: {
         user: {
             email: 'user@example.com',
@@ -58,6 +60,10 @@ vi.mock('@/lib/knowledge-storage', () => ({
     pdfExists: mocks.mockPdfExists,
     getDocPath: vi.fn((userId: string, storageName: string) => `/data/uploads/knowledge/${userId}/${storageName}`),
     openPdfStream: mocks.mockOpenPdfStream,
+}));
+
+vi.mock('@/lib/knowledge-classifier', () => ({
+    classifyKnowledgeDoc: mocks.mockClassifyKnowledgeDoc,
 }));
 
 import { GET as GET_LIST, POST } from '@/app/api/knowledge/route';
@@ -261,6 +267,102 @@ describe('/api/knowledge', () => {
             expect(res.status).toBe(500);
             expect(mocks.mockSavePdf).toHaveBeenCalledTimes(1);
             expect(mocks.mockDeletePdf).toHaveBeenCalledWith('user-123', 'uuid-new.pdf');
+        });
+    });
+
+    describe('POST /api/knowledge (auto 自动分类)', () => {
+        const USER_SUBJECTS = [
+            { id: 'sub-math', name: '数学' },
+            { id: 'sub-english', name: '英语' },
+        ];
+
+        it('docType=auto + subjectId=auto：分类成功 201，落库解析值 + classification.method', async () => {
+            mocks.mockPrismaSubject.findMany.mockResolvedValue(USER_SUBJECTS);
+            mocks.mockClassifyKnowledgeDoc.mockResolvedValue({ docType: 'exam', subjectId: 'sub-math', method: 'ai' });
+            mocks.mockPrismaKnowledgeDoc.create.mockResolvedValue({ ...OWNED_DOC, docType: 'exam', subjectId: 'sub-math' });
+
+            const res = await POST(makeUploadRequest(makePdfForm({ docType: 'auto', subjectId: 'auto' })));
+            const data = await res.json();
+
+            expect(res.status).toBe(201);
+            expect(data.docType).toBe('exam');
+            expect(data.subjectId).toBe('sub-math');
+            expect(data.classification).toEqual({ method: 'ai' });
+            expect(mocks.mockClassifyKnowledgeDoc).toHaveBeenCalledWith(
+                'a.pdf',
+                expect.any(Buffer),
+                USER_SUBJECTS
+            );
+            expect(mocks.mockPrismaKnowledgeDoc.create).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    data: expect.objectContaining({ docType: 'exam', subjectId: 'sub-math' }),
+                })
+            );
+        });
+
+        it('分类返回 subjectId=null 时落库未分类', async () => {
+            mocks.mockPrismaSubject.findMany.mockResolvedValue(USER_SUBJECTS);
+            mocks.mockClassifyKnowledgeDoc.mockResolvedValue({ docType: 'guide', subjectId: null, method: 'heuristic' });
+            mocks.mockPrismaKnowledgeDoc.create.mockResolvedValue({ ...OWNED_DOC, docType: 'guide', subjectId: null });
+
+            const res = await POST(makeUploadRequest(makePdfForm({ docType: 'auto', subjectId: 'auto' })));
+            const data = await res.json();
+
+            expect(res.status).toBe(201);
+            expect(data.subjectId).toBeNull();
+            expect(mocks.mockPrismaKnowledgeDoc.create).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    data: expect.objectContaining({ docType: 'guide', subjectId: null }),
+                })
+            );
+        });
+
+        it('分类器抛错不阻断上传：仍 201 且退 textbook/未分类/method=fallback', async () => {
+            mocks.mockPrismaSubject.findMany.mockResolvedValue(USER_SUBJECTS);
+            mocks.mockClassifyKnowledgeDoc.mockRejectedValue(new Error('boom'));
+            mocks.mockPrismaKnowledgeDoc.create.mockResolvedValue({ ...OWNED_DOC, docType: 'textbook', subjectId: null });
+
+            const res = await POST(makeUploadRequest(makePdfForm({ docType: 'auto', subjectId: 'auto' })));
+            const data = await res.json();
+
+            expect(res.status).toBe(201);
+            expect(data.docType).toBe('textbook');
+            expect(data.subjectId).toBeNull();
+            expect(data.classification).toEqual({ method: 'fallback' });
+        });
+
+        it('显式 docType + subjectId=auto：手动类型优先，学科来自分类器', async () => {
+            mocks.mockPrismaSubject.findMany.mockResolvedValue(USER_SUBJECTS);
+            mocks.mockClassifyKnowledgeDoc.mockResolvedValue({ docType: 'exam', subjectId: 'sub-english', method: 'ai' });
+            mocks.mockPrismaKnowledgeDoc.create.mockResolvedValue({ ...OWNED_DOC, docType: 'exam', subjectId: 'sub-english' });
+
+            const res = await POST(makeUploadRequest(makePdfForm({ docType: 'exam', subjectId: 'auto' })));
+
+            expect(res.status).toBe(201);
+            expect(mocks.mockPrismaKnowledgeDoc.create).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    data: expect.objectContaining({ docType: 'exam', subjectId: 'sub-english' }),
+                })
+            );
+        });
+
+        it('docType=auto + 显式 subjectId：类型来自分类器，学科保持手动值', async () => {
+            mocks.mockPrismaSubject.findFirst.mockResolvedValue({ id: 'sub-math', name: '数学' });
+            mocks.mockPrismaSubject.findMany.mockResolvedValue(USER_SUBJECTS);
+            mocks.mockClassifyKnowledgeDoc.mockResolvedValue({ docType: 'exercise', subjectId: 'sub-english', method: 'ai' });
+            mocks.mockPrismaKnowledgeDoc.create.mockResolvedValue({ ...OWNED_DOC, docType: 'exercise', subjectId: 'sub-math' });
+
+            const res = await POST(makeUploadRequest(makePdfForm({ docType: 'auto', subjectId: 'sub-math' })));
+            const data = await res.json();
+
+            expect(res.status).toBe(201);
+            expect(mocks.mockPrismaKnowledgeDoc.create).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    data: expect.objectContaining({ docType: 'exercise', subjectId: 'sub-math' }),
+                })
+            );
+            // 手动指定学科时不应用分类器的 subjectId
+            expect(data.subjectId).toBe('sub-math');
         });
     });
 
