@@ -243,6 +243,8 @@ export const translations = {
                 invalidType: "Only PDF files are supported",
                 tooLarge: "File too large (max 200MB)",
                 noFile: "Please choose a PDF file",
+                removeFile: "Remove",
+                uploadProgress: "Uploading {current}/{total}...",
             },
             actions: {
                 view: "View",
@@ -1017,6 +1019,8 @@ export const translations = {
                 invalidType: "仅支持 PDF 文件",
                 tooLarge: "文件过大（最大 200MB）",
                 noFile: "请先选择 PDF 文件",
+                removeFile: "移除",
+                uploadProgress: "上传中 ({current}/{total})...",
             },
             actions: {
                 view: "浏览",
