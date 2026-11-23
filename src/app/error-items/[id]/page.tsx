@@ -5,7 +5,8 @@ import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, CheckCircle, XCircle, RefreshCw, Trash2, Edit, Save, X, Box, Loader2, Plus, ChevronDown, Monitor, Printer, ScanText, Sparkles, Camera, PenLine } from "lucide-react";
+import { ArrowLeft, CheckCircle, XCircle, RefreshCw, Trash2, Edit, Save, X, Box, Loader2, Plus, ChevronDown, Monitor, Printer, ScanText, Sparkles, Camera, PenLine, Pencil } from "lucide-react";
+import { RenameQuestionSourceDialog } from "@/components/question-source-rename-dialog";
 import { Textarea } from "@/components/ui/textarea";
 import Link from "next/link";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -119,6 +120,7 @@ export default function ErrorDetailPage() {
     const [newSourceName, setNewSourceName] = useState("");
     const [isAddingSource, setIsAddingSource] = useState(false);
     const [sourcePopoverOpen, setSourcePopoverOpen] = useState(false);
+    const [renamingSource, setRenamingSource] = useState<string | null>(null);
     const [isScreenshotting, setIsScreenshotting] = useState(false);
     const [screenshotPreview, setScreenshotPreview] = useState<string | null>(null);
     const [screenshotStream, setScreenshotStream] = useState<MediaStream | null>(null);
@@ -296,6 +298,33 @@ export default function ErrorDetailPage() {
         } catch (error: any) {
             console.error("Failed to delete custom source:", error);
             alert(error.message || '删除失败，请稍后重试');
+        }
+    };
+
+    const handleRenameCustomSource = async (oldName: string, newName: string) => {
+        if (oldName === newName) return;
+        try {
+            const subjectId = notebookInput || item?.subjectId || null;
+            const sources = await apiClient.get<{ id: string; name: string }[]>(
+                subjectId ? `/api/question-sources?subjectId=${encodeURIComponent(subjectId)}` : "/api/question-sources"
+            );
+            const sourceToRename = sources.find(s => s.name === oldName);
+
+            if (!sourceToRename) {
+                alert('找不到要重命名的来源');
+                return;
+            }
+
+            await apiClient.patch(`/api/question-sources/${sourceToRename.id}`, { name: newName });
+            setCustomQuestionSources(prev => prev.map(s => (s === oldName ? newName : s)));
+            if (paperLevelInput === oldName) {
+                setPaperLevelInput(newName);
+            }
+            setRenamingSource(null);
+        } catch (error: any) {
+            console.error("Failed to rename custom source:", error);
+            alert(error.data?.message || error.message || '重命名失败，请稍后重试');
+            throw error;
         }
     };
 
@@ -2054,6 +2083,18 @@ export default function ErrorDetailPage() {
                                                                                 className="h-7 w-7 p-0"
                                                                                 onClick={(e) => {
                                                                                     e.stopPropagation();
+                                                                                    setRenamingSource(source);
+                                                                                }}
+                                                                                title="重命名"
+                                                                            >
+                                                                                <Pencil className="h-3 w-3" />
+                                                                            </Button>
+                                                                            <Button
+                                                                                variant="ghost"
+                                                                                size="sm"
+                                                                                className="h-7 w-7 p-0"
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
                                                                                     handleDeleteCustomSource(source);
                                                                                 }}
                                                                             >
@@ -2753,6 +2794,13 @@ export default function ErrorDetailPage() {
                     </div>
                 )
             }
+
+            <RenameQuestionSourceDialog
+                open={renamingSource !== null}
+                onOpenChange={(open) => { if (!open) setRenamingSource(null); }}
+                currentName={renamingSource || ""}
+                onRename={(newName) => handleRenameCustomSource(renamingSource || "", newName)}
+            />
         </main >
     );
 }
