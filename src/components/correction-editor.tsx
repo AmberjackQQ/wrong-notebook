@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Save, Loader2, Box, Plus, X, ChevronDown, ScanText, Sparkles } from "lucide-react";
+import { Save, Loader2, Box, Plus, X, ChevronDown, ScanText, Sparkles, Pencil } from "lucide-react";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { frontendLogger } from "@/lib/frontend-logger";
 import { MarkdownRenderer } from "@/components/markdown-renderer";
@@ -22,6 +22,7 @@ import { normalizeMistakeStatusForSave, type MistakeStatus } from "@/lib/mistake
 import { GeogebraDemo } from "@/components/geogebra-demo";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { RichTextEditorWithImage } from "@/components/rich-text-editor-with-image";
+import { RenameQuestionSourceDialog } from "@/components/question-source-rename-dialog";
 
 interface ParsedQuestionWithSubject extends ParsedQuestion {
     subjectId?: string;
@@ -101,6 +102,7 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
     const [educationStage, setEducationStage] = useState<string | undefined>(undefined);
     const [notebooks, setNotebooks] = useState<Notebook[]>([]);
     const [customQuestionSources, setCustomQuestionSources] = useState<string[]>([]);
+    const [renamingSource, setRenamingSource] = useState<string | null>(null);
 
 
 
@@ -407,6 +409,31 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
         }
     };
 
+    const handleRenameCustomSource = async (oldName: string, newName: string) => {
+        if (oldName === newName) return;
+        try {
+            const sources = await apiClient.get<{ id: string; name: string }[]>("/api/question-sources");
+            const sourceToRename = sources.find(s => s.name === oldName);
+
+            if (!sourceToRename) {
+                alert('找不到要重命名的来源');
+                return;
+            }
+
+            await apiClient.patch(`/api/question-sources/${sourceToRename.id}`, { name: newName });
+            setCustomQuestionSources(prev => prev.map(s => (s === oldName ? newName : s)));
+            if (data.paperLevel === oldName) {
+                setData(prev => ({ ...prev, paperLevel: newName }));
+            }
+            setRenamingSource(null);
+            frontendLogger.info('[CorrectionEditor]', 'Custom question source renamed', { oldName, newName });
+        } catch (error: any) {
+            console.error("Failed to rename custom source:", error);
+            alert(error.data?.message || error.message || '重命名失败，请稍后重试');
+            throw error;
+        }
+    };
+
 
     return (
         <div className="space-y-6">
@@ -534,6 +561,18 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
                                                             }}
                                                         >
                                                             {source}
+                                                        </Button>
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            className="h-7 w-7 p-0"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setRenamingSource(source);
+                                                            }}
+                                                            title="重命名"
+                                                        >
+                                                            <Pencil className="h-3 w-3" />
                                                         </Button>
                                                         <Button
                                                             variant="ghost"
@@ -932,6 +971,13 @@ export function CorrectionEditor({ initialData, onSave, onCancel, imagePreview, 
                     </Card>
                 </div>
             </div>
+
+            <RenameQuestionSourceDialog
+                open={renamingSource !== null}
+                onOpenChange={(open) => { if (!open) setRenamingSource(null); }}
+                currentName={renamingSource || ""}
+                onRename={(newName) => handleRenameCustomSource(renamingSource || "", newName)}
+            />
         </div>
     );
 }
