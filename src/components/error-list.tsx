@@ -546,20 +546,6 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
                                 >
                                     {t.filter.all || "全部"}
                                 </Button>
-                                {[...PRESET_QUESTION_SOURCES].sort().map(source => (
-                                    <Button
-                                        key={source}
-                                        variant="ghost"
-                                        className={`w-full justify-start px-2 ${paperLevelFilter === source ? "bg-secondary" : ""}`}
-                                        size="sm"
-                                        onClick={() => {
-                                            setPaperLevelFilter(source);
-                                            setSourcePopoverOpen(false);
-                                        }}
-                                    >
-                                        {source}
-                                    </Button>
-                                ))}
                                 {customQuestionSources.length > 0 && (
                                     <>
                                         <div className="px-2 py-1.5 text-sm font-semibold text-muted-foreground mt-2">
