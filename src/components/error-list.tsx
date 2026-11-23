@@ -6,7 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Search, Filter, CheckCircle, Clock, ChevronDown, Printer, ListChecks, Trash2, X, ArrowUpDown } from "lucide-react";
+import { Search, Filter, CheckCircle, Clock, ChevronDown, Printer, ListChecks, Trash2, X, ArrowUpDown, Pencil } from "lucide-react";
+import { RenameQuestionSourceDialog } from "@/components/question-source-rename-dialog";
 import Link from "next/link";
 import { format } from "date-fns";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -131,6 +132,7 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
     // 自定义题目来源
     const [customQuestionSources, setCustomQuestionSources] = useState<string[]>([]);
     const [sourcePopoverOpen, setSourcePopoverOpen] = useState(false);
+    const [renamingSource, setRenamingSource] = useState<string | null>(null);
     // 排序状态
     const [sortBy, setSortBy] = useState<string>(initialFilterState.sortBy);
     const [sortOrder, setSortOrder] = useState<"asc" | "desc">(initialFilterState.sortOrder);
@@ -346,6 +348,35 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
         fetchCustomSources();
     }, [subjectId]);
 
+    const handleRenameCustomSource = async (oldName: string, newName: string) => {
+        if (oldName === newName) return;
+        try {
+            const url = subjectId
+                ? `/api/question-sources?subjectId=${encodeURIComponent(subjectId)}`
+                : "/api/question-sources";
+            const sources = await apiClient.get<{ id: string; name: string }[]>(url);
+            const sourceToRename = sources.find(s => s.name === oldName);
+
+            if (!sourceToRename) {
+                alert('找不到要重命名的来源');
+                return;
+            }
+
+            await apiClient.patch(`/api/question-sources/${sourceToRename.id}`, { name: newName });
+            setCustomQuestionSources(prev => prev.map(s => (s === oldName ? newName : s)));
+            if (paperLevelFilter === oldName) {
+                setPaperLevelFilter(newName);
+            }
+            setRenamingSource(null);
+            // 来源名已级联到错题，刷新当前列表避免卡片上的旧名称
+            fetchItems();
+        } catch (error: any) {
+            console.error("Failed to rename custom source:", error);
+            alert(error.data?.message || error.message || '重命名失败，请稍后重试');
+            throw error;
+        }
+    };
+
     useEffect(() => {
         const prevFilters = prevFiltersRef.current;
         const filtersChanged =
@@ -535,18 +566,31 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
                                             自定义来源
                                         </div>
                                         {customQuestionSources.sort().map(source => (
-                                            <Button
-                                                key={source}
-                                                variant="ghost"
-                                                className={`w-full justify-start px-2 ${paperLevelFilter === source ? "bg-secondary" : ""}`}
-                                                size="sm"
-                                                onClick={() => {
-                                                    setPaperLevelFilter(source);
-                                                    setSourcePopoverOpen(false);
-                                                }}
-                                            >
-                                                {source}
-                                            </Button>
+                                            <div key={source} className="flex items-center gap-1 px-2">
+                                                <Button
+                                                    variant="ghost"
+                                                    className={`flex-1 justify-start px-2 ${paperLevelFilter === source ? "bg-secondary" : ""}`}
+                                                    size="sm"
+                                                    onClick={() => {
+                                                        setPaperLevelFilter(source);
+                                                        setSourcePopoverOpen(false);
+                                                    }}
+                                                >
+                                                    {source}
+                                                </Button>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="h-7 w-7 p-0"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setRenamingSource(source);
+                                                    }}
+                                                    title="重命名"
+                                                >
+                                                    <Pencil className="h-3 w-3" />
+                                                </Button>
+                                            </div>
                                         ))}
                                     </>
                                 )}
@@ -803,6 +847,13 @@ export function ErrorList({ subjectId, subjectName }: ErrorListProps = {}) {
                     </div>
                 </div>
             )}
+
+            <RenameQuestionSourceDialog
+                open={renamingSource !== null}
+                onOpenChange={(open) => { if (!open) setRenamingSource(null); }}
+                currentName={renamingSource || ""}
+                onRename={(newName) => handleRenameCustomSource(renamingSource || "", newName)}
+            />
         </div>
     );
 }
