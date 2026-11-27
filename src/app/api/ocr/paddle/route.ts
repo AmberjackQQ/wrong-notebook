@@ -13,6 +13,11 @@ const JOB_URL = 'https://paddleocr.aistudio-app.com/api/v2/ocr/jobs';
 const POLL_INTERVAL_MS = Number(process.env.PADDLE_OCR_POLL_MS) || 5000;
 // AI Studio 高峰期任务排队可能超过 3 分钟，给足 5 分钟；客户端超时需大于此值
 const MAX_POLL_MS = 300000;
+// 提交被限流（code 10010 队列已满）时的退避重试间隔，逗号分隔，可注入短间隔（单测）
+const SUBMIT_RETRY_DELAYS_MS = (process.env.PADDLE_OCR_SUBMIT_RETRY_MS || '5000,10000')
+    .split(',')
+    .map((s) => Number(s.trim()))
+    .filter((n) => Number.isFinite(n) && n >= 0);
 
 interface PaddleJobResponse {
     data?: {
@@ -143,13 +148,11 @@ export async function POST(req: Request) {
         });
 
         // 提交任务：http URL 走 JSON 模式，data URL 走文件上传模式
-        let submitResponse: Response;
+        let submitBody: BodyInit;
+        let jsonMode = false;
         if (image.startsWith('http')) {
-            submitResponse = await fetch(JOB_URL, {
-                method: 'POST',
-                headers: { ...authHeaders, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ fileUrl: image, model: ocrModel, optionalPayload: JSON.parse(optionalPayload) }),
-            });
+            submitBody = JSON.stringify({ fileUrl: image, model: ocrModel, optionalPayload: JSON.parse(optionalPayload) });
+            jsonMode = true;
         } else {
             const match = /^data:([^;,]+);base64,(.+)$/s.exec(image);
             if (!match) {
@@ -161,17 +164,38 @@ export async function POST(req: Request) {
             form.append('file', new Blob([bytes], { type: contentType }), 'original-image');
             form.append('model', ocrModel);
             form.append('optionalPayload', optionalPayload);
-            submitResponse = await fetch(JOB_URL, {
+            submitBody = form;
+        }
+
+        const submitOnce = () =>
+            fetch(JOB_URL, {
                 method: 'POST',
-                headers: authHeaders,
-                body: form,
+                headers: jsonMode ? { ...authHeaders, 'Content-Type': 'application/json' } : authHeaders,
+                body: submitBody,
             });
+
+        // 队列满（code 10010）是云端限流的瞬时拥堵，退避重试吸收；其余错误（token 无效、图片非法等）快速失败
+        let submitResponse = await submitOnce();
+        let queueFull = false;
+        let detail = '';
+        for (const delayMs of SUBMIT_RETRY_DELAYS_MS) {
+            if (submitResponse.ok) break;
+            detail = await submitResponse.text().catch(() => '');
+            queueFull = detail.includes('10010') || detail.includes('队列已满');
+            if (!queueFull) break;
+            logger.warn({ delayMs, detail: detail.slice(0, 200) }, 'PaddleOCR submit queue full, backing off');
+            await sleep(delayMs);
+            submitResponse = await submitOnce();
         }
 
         if (!submitResponse.ok) {
-            const detail = await submitResponse.text().catch(() => '');
             logger.error({ status: submitResponse.status, detail: detail.slice(0, 500) }, 'PaddleOCR job submit failed');
-            return createErrorResponse(`OCR 任务提交失败（${submitResponse.status}）`, 502);
+            return createErrorResponse(
+                queueFull
+                    ? '飞桨云端繁忙（提交队列已满），已自动重试仍失败，请约 5 分钟后再试'
+                    : `OCR 任务提交失败（${submitResponse.status}）`,
+                502,
+            );
         }
         const submitted = (await submitResponse.json()) as PaddleJobResponse;
         const jobId = submitted.data?.jobId;

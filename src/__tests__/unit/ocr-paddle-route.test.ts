@@ -44,6 +44,7 @@ const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
 
 process.env.PADDLE_OCR_POLL_MS = '1';
+process.env.PADDLE_OCR_SUBMIT_RETRY_MS = '1,1';
 const { POST } = await import('@/app/api/ocr/paddle/route');
 
 const DATA_URL = `data:image/png;base64,${Buffer.from('fake-png-bytes').toString('base64')}`;
@@ -435,5 +436,61 @@ describe('POST /api/ocr/paddle', () => {
         });
         const res = await POST(makeRequest({ image: DATA_URL }));
         expect(res.status).toBe(502);
+        // 非队列满错误快速失败，不重试
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('队列满（code 10010）自动退避重试后成功', async () => {
+        // 第 1 次提交被限流
+        mockFetch.mockResolvedValueOnce({
+            ok: false,
+            status: 400,
+            text: async () => JSON.stringify({ traceId: 't', code: 10010, msg: '任务提交队列已满，请稍后重试' }),
+        });
+        // 重试提交成功
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            json: async () => ({ data: { jobId: 'job-retry' } }),
+        });
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            json: async () => ({ data: { state: 'done', resultUrl: { jsonUrl: 'https://x/retry.jsonl' } } }),
+        });
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            text: async () => JSON.stringify({ result: { layoutParsingResults: [{ markdown: { text: '重试后识别成功' } }] } }),
+        });
+
+        const res = await POST(makeRequest({ image: DATA_URL }));
+        const body = await res.json();
+
+        expect(res.status).toBe(200);
+        expect(body.markdown).toBe('重试后识别成功');
+        // 共 4 次 fetch：2 次提交 + 1 次轮询 + 1 次下载 JSONL
+        expect(mockFetch).toHaveBeenCalledTimes(4);
+        expect(mockFetch.mock.calls[0][0]).toContain('/ocr/jobs');
+        expect(mockFetch.mock.calls[1][0]).toContain('/ocr/jobs');
+    });
+
+    it('队列满重试耗尽返回 502 并提示稍后再试', async () => {
+        for (let i = 0; i < 3; i++) {
+            mockFetch.mockResolvedValueOnce({
+                ok: false,
+                status: 400,
+                text: async () => JSON.stringify({ code: 10010, msg: '任务提交队列已满，请稍后重试' }),
+            });
+        }
+
+        const res = await POST(makeRequest({ image: DATA_URL }));
+        const body = await res.json();
+
+        expect(res.status).toBe(502);
+        expect(body.message).toContain('队列已满');
+        expect(body.message).toContain('5 分钟');
+        // 3 次提交（初始 + 2 次重试），无轮询
+        expect(mockFetch).toHaveBeenCalledTimes(3);
     });
 });
